@@ -58,7 +58,7 @@ const AWAIT_SPEECH_MS = 14000
 /** After an answer, how long the mic stays open for a follow-up before he
  *  drops back to standby. Long enough that you don't have to say the name
  *  again to continue a thought. */
-const FOLLOW_UP_MS = 11000
+const FOLLOW_UP_MS = 7000
 
 /** crypto.randomUUID needs a secure context, which a LAN address over plain
  *  http is not. Not worth failing a whole turn over an id. */
@@ -69,7 +69,7 @@ const newId = () =>
 /** The same mishearings voice.ts accepts for the wake word — otherwise a turn
  *  that woke him as "travis" gets that word sent on to the model as a question. */
 // Como o Whisper costuma escrever "Jarvis": javis, jáaves, jav, já viso, já visi...
-const NAME = String.raw`(?:d?j[aáàâãe][aáâã]?r?[vb][iíeé]?[sz]?[eéioóu]?|j[aáàâã][\s,.-]+v[iíeé]s[eéioóu]?|jarbas|jervis|travis)`
+const NAME = String.raw`(?:d?j[aáàâãe][aáâã]?r?[vb][iíeé]?[sz]?[eéioóu]?|j[aáàâã][\s,.-]+v[iíeé]s[eéioóu]?|jarbas|jervis|travis|amig[aã]o)`
 /** Os jeitos de chamar: "Ei Jarvis", "Oi Jarvis", "Fala Jarvis"... */
 const PREFIX = '(?:(?:ei|eii|hey|hei|oi|olá|ola|ok|okay|fala|e aí|e ai)[\\s,]+)?'
 /** A bare vocative — "Jarvis", "ei jarvis" — with nothing asked. */
@@ -327,6 +327,44 @@ export default function App() {
   const onUtterance = (text: string) => {
     const phase = store.getState().phase
     if (phase === 'offline' || phase === 'boot' || phase === 'dormant') return
+
+    // "Pausar" / "pare de ouvir": volta a dormir e só acorda com "Jarvis".
+    // "Pare" / "chega" / "cancela": só interrompe, sem virar pedido.
+    const t = text.toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '').replace(/[^a-z ]+/g, ' ').trim()
+    const semNome = t.replace(/^(ei |oi )?(jarvis|javis|jarves|amigao)\b ?/, '').trim()
+    if (/^(pausa|pausar|pause|para de ouvir|pare de ouvir|nao escuta|nao me escuta|para de escutar|pare de escutar|dorme|vai dormir|modo pausa|descansa|desliga o microfone)$/.test(semNome)) {
+      silence()
+      lastAsk.current = null
+      const spk = createSpeaker()
+      speaker.current = spk
+      spk.say('Pausado. Me chame quando precisar.')
+      void spk.end().then(() => store.getState().setPhase('dormant'))
+      store.getState().setPhase('speaking')
+      return
+    }
+    // O painel de informações, por voz.
+    if (/^(minimiza|minimizar|esconde|esconder|fecha|fechar|tira|recolhe|recolher)( tudo| todas| todos| as janelas| as informacoes| o painel| os cartoes| as noticias| isso)+$/.test(semNome)) {
+      useCards.getState().minimizeAll()
+      const spk = createSpeaker()
+      speaker.current = spk
+      spk.say('Minimizado.')
+      void spk.end().then(() => store.getState().setPhase('dormant'))
+      return
+    }
+    if (/^(mostra|mostrar|abre|abrir|volta|exibe|exibir)( de novo)?( tudo| as janelas| as informacoes| o painel| os cartoes)+$/.test(semNome)) {
+      useCards.getState().restoreAll()
+      const spk = createSpeaker()
+      speaker.current = spk
+      spk.say('Aqui está.')
+      void spk.end().then(() => store.getState().setPhase('dormant'))
+      return
+    }
+    if (/^(pare|para|chega|cancela|cancelar|silencio|esquece|deixa pra la|deixa para la|fica quieto)$/.test(semNome)) {
+      silence()
+      lastAsk.current = null
+      store.getState().setPhase('dormant')
+      return
+    }
 
     // People keep using his name as a vocative once they're already talking to
     // him. Strip it rather than sending "jarvis" to the model as a question.

@@ -2599,3 +2599,71 @@ body::before {
 .vh-grid {
   display: none;
 }
+
+/* ---- Barra lateral de informações (no lugar da aba de baixo) ---- */
+.vh-tab {
+  display: none !important;
+}
+.vh-panel {
+  right: 86px;
+}
+.vh-rail {
+  position: absolute;
+  right: 14px;
+  top: 50%;
+  transform: translateY(-50%);
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  pointer-events: auto;
+  z-index: 5;
+}
+.vh-rail-btn {
+  position: relative;
+  width: 58px;
+  height: 58px;
+  border-radius: 12px;
+  border: 1px solid rgba(130, 120, 255, 0.35);
+  background: rgba(10, 10, 32, 0.85);
+  color: #d9dcff;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 2px;
+  cursor: pointer;
+  font: inherit;
+  transition: border-color 0.2s, box-shadow 0.2s, background 0.2s;
+}
+.vh-rail-btn span {
+  font-size: 20px;
+  line-height: 1;
+}
+.vh-rail-btn i {
+  font-style: normal;
+  font-size: 8px;
+  letter-spacing: 0.08em;
+  color: #9aa0e8;
+}
+.vh-rail-btn b {
+  position: absolute;
+  top: -6px;
+  right: -6px;
+  min-width: 18px;
+  height: 18px;
+  border-radius: 9px;
+  background: linear-gradient(135deg, #3d7bff, #a05cff);
+  color: #fff;
+  font-size: 10px;
+  line-height: 18px;
+  padding: 0 4px;
+}
+.vh-rail-btn:hover,
+.vh-rail-btn.on {
+  border-color: #8f7bff;
+  box-shadow: 0 0 16px rgba(130, 100, 255, 0.45);
+  background: rgba(30, 24, 80, 0.9);
+}
+.vh-rail-all {
+  margin-bottom: 6px;
+}

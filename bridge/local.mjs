@@ -690,7 +690,7 @@ function comandoSistema(t, ctx) {
     return runProgram('rundll32.exe', ['user32.dll,LockWorkStation']) && 'Tela bloqueada.'
   if (/\b(tira|tire|faz|faca) (um )?(print|captura de tela|screenshot)\b/.test(t))
     return (ctx.open ?? openThing)('ms-screenclip:') && 'Selecione a área da tela.'
-  if (/\b(minimiza tudo|minimizar tudo|mostra a area de trabalho|mostrar a area de trabalho)\b/.test(t))
+  if (/\b(mostra a area de trabalho|mostrar a area de trabalho|minimiza os programas|minimiza as janelas do windows)\b/.test(t))
     return run('(New-Object -ComObject Shell.Application).MinimizeAll()') && 'Área de trabalho à vista.'
   return null
 }

@@ -39,6 +39,24 @@ const ICON: Record<string, string> = {
   sol: '☀', 'nuvem-sol': '⛅', nuvem: '☁', chuva: '🌧', tempestade: '⛈',
   clima: '✳', noticia: '◉', texto: '▣', lista: '▤', video: '▶', status: '◈',
 }
+/** Grupos da barra lateral. */
+const GRUPOS = [
+  { id: 'clima', nome: 'Clima', icone: '☀' },
+  { id: 'noticias', nome: 'Notícias', icone: '📰' },
+  { id: 'lembretes', nome: 'Lembretes', icone: '⏰' },
+  { id: 'arquivos', nome: 'Arquivos', icone: '📁' },
+  { id: 'midia', nome: 'Mídia', icone: '▶' },
+  { id: 'outros', nome: 'Outros', icone: '◈' },
+]
+function grupoDe(c: Card): string {
+  if (c.kind === 'clima') return 'clima'
+  if (c.kind === 'noticia' || /JORNAL|MANCHETE|RADAR|POLÍTICA|INTELIG/.test(c.kicker ?? '')) return 'noticias'
+  if (/LEMBRETE/.test(c.kicker ?? '')) return 'lembretes'
+  if (/ARQUIVOS/.test(c.kicker ?? '')) return 'arquivos'
+  if (c.kind === 'video') return 'midia'
+  return 'outros'
+}
+
 const Icon = ({ name }: { name: string }) => <span className="vh-icon">{ICON[name] ?? '◈'}</span>
 
 function CardView({ c, big }: { c: Card; big: boolean }) {
@@ -137,7 +155,6 @@ export function VideoHud() {
   const slots = useCards((s) => s.slots)
   const latest = useCards((s) => s.latest)
   const open = slots.filter((x) => !x.min)
-  const mins = slots.filter((x) => x.min)
   const hasOpen = open.length > 0
   const last = turns[turns.length - 1]
   const line = caption || (phase === 'speaking' && last?.role === 'jarvis' ? last.text.split(/(?<=[.!?])\s/).slice(-1)[0] : '')
@@ -193,34 +210,44 @@ export function VideoHud() {
         </AnimatePresence>
       </div>
 
-      {mins.length > 0 && (
-        <div className="vh-tab">
-          <div className="vh-tab-title">
-            INFORMAÇÕES · {mins.length}
-            <button onClick={() => useCards.getState().restoreAll()}>abrir tudo</button>
-          </div>
-          <div className="vh-tab-items">
-            {mins.map(({ card }) => (
-              <motion.button
-                key={card.id}
-                layoutId={card.id}
-                className="vh-chip"
-                onClick={() => useCards.getState().restore(card.id)}
-                title={card.title}
+      {slots.length > 0 && (
+        <div className="vh-rail">
+          <button
+            className={`vh-rail-btn vh-rail-all ${hasOpen ? 'on' : ''}`}
+            title={hasOpen ? 'Minimizar tudo' : 'Mostrar todas as informações'}
+            onClick={() => (hasOpen ? useCards.getState().minimizeAll() : useCards.getState().restoreAll())}
+          >
+            <span>{hasOpen ? '▣' : '▤'}</span>
+            <b>{slots.length}</b>
+          </button>
+          {GRUPOS.map((g) => {
+            const itens = slots.filter((x) => grupoDe(x.card) === g.id)
+            if (!itens.length) return null
+            const abertos = itens.some((x) => !x.min)
+            return (
+              <button
+                key={g.id}
+                className={`vh-rail-btn ${abertos ? 'on' : ''}`}
+                title={`${g.nome}: ${itens.map((x) => x.card.title ?? '').join(' · ').slice(0, 200)}`}
+                onClick={() => {
+                  const st = useCards.getState()
+                  if (abertos) itens.forEach((x) => st.minimize(x.card.id))
+                  else itens.forEach((x) => st.restore(x.card.id))
+                }}
               >
-                <span>{ICON[card.kind] ?? '◈'}</span>
-                <b>{card.kicker ?? card.kind}</b>
-                <i>{card.kind === 'clima' && card.clima ? `${fmt(card.clima.temp, 0)}° ${card.clima.cidade}` : card.title}</i>
-              </motion.button>
-            ))}
-          </div>
+                <span>{g.icone}</span>
+                <i>{g.nome}</i>
+                {itens.length > 1 && <b>{itens.length}</b>}
+              </button>
+            )
+          })}
         </div>
       )}
 
       {line && <div className="vh-caption">{line}</div>}
       {error && <div className="vh-error">{error}</div>}
       <div className="vh-foot">
-        diga <b>“ei jarvis”</b> · <kbd>Espaço</kbd> para falar · <kbd>V</kbd> voz:{' '}
+        diga <b>“Jarvis”</b> ou <b>“amigão”</b> · <b>“pausar”</b> para parar de ouvir · <kbd>Espaço</kbd> para falar · <kbd>V</kbd> voz:{' '}
         {currentVoiceName().replace(/^Microsoft\s+/, '').replace(/\s*-.*$/, '')} · <kbd>D</kbd> diagnóstico
       </div>
 

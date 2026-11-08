@@ -78,7 +78,7 @@ const WAKE_DEBOUNCE = 1500
  * indication why. Better a rare false wake than a name that does not answer.
  */
 const WAKE =
-  /(?<![\p{L}\p{N}])(?:(?:ei|eii|hey|hei|oi|olá|ola|ok|okay|fala|e aí|e ai)[\s,]+)?(?:d?j[aáàâãe][aáâã]?r?[vb][iíeé]?[sz]?[eéioóu]?|j[aáàâã][\s,.-]+v[iíeé]s[eéioóu]?|jarbas|jervis|travis)(?![\p{L}\p{N}'])/iu
+  /(?<![\p{L}\p{N}])(?:(?:ei|eii|hey|hei|oi|olá|ola|ok|okay|fala|e aí|e ai)[\s,]+)?(?:d?j[aáàâãe][aáâã]?r?[vb][iíeé]?[sz]?[eéioóu]?|j[aáàâã][\s,.-]+v[iíeé]s[eéioóu]?|jarbas|jervis|travis|amig[aã]o|amigao)(?![\p{L}\p{N}'])/iu
 
 /** Everything after the wake phrase, which is usually the actual command. */
 function afterWake(text: string): string {
@@ -506,6 +506,20 @@ async function startElevenVoice(h: VoiceHandlers): Promise<Voice> {
       diag.heard = said
       diag.heardAt = Date.now()
 
+      if (mode === 'guard') {
+        // Ocupado (pensando, trabalhando, lendo o jornal): só atende se você
+        // chamar pelo nome ou mandar parar. A conversa com outra pessoa passa.
+        if (WAKE.test(said) || OVERRIDE.test(said)) {
+          diag.accepted++
+          h.onSpeechStart()
+          const rest = WAKE.test(said) ? afterWake(said) : said
+          if (rest) assemble.feed(rest, false)
+        } else {
+          drop(`ocupado — ignorou "${said.slice(-40)}"`)
+        }
+        return
+      }
+
       if (mode === 'wake') {
         if (WAKE.test(said) && Date.now() - lastWake > WAKE_DEBOUNCE) {
           lastWake = Date.now()
@@ -554,14 +568,8 @@ async function startElevenVoice(h: VoiceHandlers): Promise<Voice> {
       // The barge-in. In guard mode the user has started talking over him, and
       // because the guard threshold is high this is a real interruption rather
       // than leaked playback — so cut him off now, do not wait for the words.
-      if (mode === 'guard') {
-        const since = speakingSince()
-        if (since && Date.now() - since < SELF_GUARD_MS) {
-          diag.selfGuarded++
-          return
-        }
-        h.onSpeechStart()
-      }
+      // Enquanto ele trabalha ou fala, barulho e conversa ao redor NÃO
+      // interrompem: só o nome dele ou "pare", decididos depois de transcrever.
     },
     onEnd: (blob) => {
       pendingAudio.push(blob)
@@ -751,6 +759,7 @@ function startBrowserVoice(h: VoiceHandlers): Voice {
       if (mode === 'guard') {
         // An override word cuts through everything below it — "stop" has to
         // work on the first syllable or it is not a stop button.
+        if (!OVERRIDE.test(full) && !WAKE.test(full)) return
         if (!OVERRIDE.test(full)) {
           // His own first syllable, same as the premium path. This engine has
           // no energy gate, so without the clock the only defence is the word
