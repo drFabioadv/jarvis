@@ -24,6 +24,7 @@ import { homedir, platform } from 'node:os'
 import { join, basename, dirname } from 'node:path'
 import { readdir, stat } from 'node:fs/promises'
 import { existsSync, readFileSync } from 'node:fs'
+import { acharApp, acharArquivos } from './indice.mjs'
 
 const UA =
   'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/130.0 Safari/537.36'
@@ -319,6 +320,9 @@ async function acharPrograma(pedido) {
   const q = norm(pedido)
   if (!q) return null
   const alvos = APELIDOS[q] ?? [q]
+  // O índice do computador (apps instalados + atalhos) responde na hora.
+  const doIndice = acharApp(alvos)
+  if (doIndice && doIndice.score >= 60) return { nome: doIndice.nome, path: doIndice.abrir, score: doIndice.score }
   const list = await listarAtalhos()
   let melhor = null
   for (const alvo of alvos) {
@@ -576,9 +580,12 @@ async function youtubeFirst(query) {
 
 // ------------------------------------------------------------------ arquivos
 
-async function findFiles(query, { onlyDirs = false, limit = 8, budgetMs = 5000 } = {}) {
+async function findFiles(query, { onlyDirs = false, limit = 8, budgetMs = 5000, local = '' } = {}) {
   const words = norm(query).split(' ').filter((w) => w.length > 1)
   if (!words.length) return []
+  // Com o índice pronto, a busca é instantânea.
+  const rapido = acharArquivos(query, { onlyDirs, local, limit })
+  if (rapido) return rapido.map((h) => ({ path: h.path, name: h.nome, dir: h.dir, score: h.score }))
   const roots = Object.values(userFolders()).filter((p, i, a) => existsSync(p) && a.indexOf(p) === i)
   const skip = /^(node_modules|appdata|\.git|\$recycle\.bin|\..*|windows|program files.*)$/i
   const started = Date.now()
@@ -741,19 +748,37 @@ export async function handleLocal(raw, ctx) {
 
   // ---- arquivos e pastas
   const fileAsk =
-    /\b(?:procura|procure|acha|ache|encontra|encontre|busca|busque|localiza|abre|abra)\b\s*(?:nos meus arquivos |no computador |no meu computador |no pc )?(?:a |o |as |os |minha |meu )?(pasta|arquivo|documento|planilha|foto|pdf)s?\s+(?:chamad[ao] |de nome |com nome |do |da |de )?(.+?)(?:\s+(?:nos meus arquivos|no computador|no meu computador|no pc))?$/.exec(t) ??
+    /\b(?:procura|procure|acha|ache|encontra|encontre|busca|busque|localiza|abre|abra)\b\s*(?:nos meus arquivos |no computador |no meu computador |no pc )?(?:a |o |as |os |minha |meu )?(pasta|arquivo|documento|planilha|foto|pdf)s?\s+(?:chamad[ao] |de nome |com nome |do |da |de )?(.+?)(?:\s+(?:nos meus arquivos|no computador|no meu computador|no pc|no meu pc))?$/.exec(t) ??
     /\b(?:procura|procure|acha|ache|encontra|encontre|busca|busque)\b\s+(?:nos meus arquivos|no computador|no meu computador|no pc)\s+(?:a |o )?(?:(pasta|arquivo) )?(.+)$/.exec(t)
   if (fileAsk) {
     const kind = fileAsk[1] ?? ''
     let q = fileAsk[2].replace(/\s+e (abre|abra|mostra)$/, '').trim()
-    const wantsOpen = /^(abre|abra)\b/.test(t) || /\be (abre|abra)\b/.test(t)
+    // "... nos meus documentos" / "na área de trabalho" / "nos downloads"
+    const LOCAIS = [
+      [/\s+(?:nos meus documentos|nos documentos|em documentos|na pasta documentos|em meus documentos|dos meus documentos|dos documentos)$/, 'documentos'],
+      [/\s+(?:na minha area de trabalho|na area de trabalho|no desktop|da area de trabalho)$/, 'area de trabalho'],
+      [/\s+(?:nos meus downloads|nos downloads|em downloads|na pasta downloads|dos downloads)$/, 'downloads'],
+      [/\s+(?:nas minhas imagens|nas imagens|nas fotos|nas minhas fotos)$/, 'imagens'],
+      [/\s+(?:nos meus videos|nos videos)$/, 'videos'],
+      [/\s+(?:no onedrive|no meu onedrive)$/, 'onedrive'],
+    ]
+    let local = ''
+    for (const [re, nome] of LOCAIS) {
+      if (re.test(q)) {
+        q = q.replace(re, '').trim()
+        local = nome
+      }
+    }
+    // Pasta: procurar já abre. Arquivo: só abre se pedir.
+    const wantsOpen = /^(abre|abra)\b/.test(t) || /\be (abre|abra)\b/.test(t) || kind === 'pasta'
     const named = userFolders()[q]
     if (named && kind === 'pasta') {
       if (allowOpen) opener(named)
       return [{ say: `Abrindo a pasta ${q}.` }]
     }
     q = R(q.replace(/^(chamad[ao]|de nome) /, ''))
-    const hits = await findFiles(q, { onlyDirs: kind === 'pasta' })
+    let hits = await findFiles(q, { onlyDirs: kind === 'pasta', local })
+    if (!hits.length && local) hits = await findFiles(q, { onlyDirs: kind === 'pasta' })
     if (!hits.length) return [{ say: `Não encontrei ${kind || 'nada'} com o nome ${q} nas suas pastas, senhor.`, card: filesCard(q, hits) }]
     if (wantsOpen && allowOpen) {
       opener(hits[0].path)
@@ -924,4 +949,37 @@ async function jornal(cfg) {
   if (steps.length === 1) return [{ say: 'Receio que as fontes do jornal não responderam agora, senhor.' }]
   steps.push({ say: 'Esse foi o jornal de hoje. Posso ajudar em mais alguma coisa?' })
   return steps
+}
+
+
+/**
+ * O painel que aparece ao abrir o JARVIS: clima e notícias do dia, em
+ * cartões, sem falar nada e sem gastar o Claude.
+ */
+export async function painelInicial(cfg) {
+  const [w, principais, ia, politica] = await Promise.all([
+    weather(cfg, '').catch(() => null),
+    news('', 5, cfg).catch(() => []),
+    news('inteligência artificial', 2, cfg).catch(() => []),
+    news('', 2, cfg, { feeds: ['https://agenciabrasil.ebc.com.br/rss/politica/feed.xml'], buscas: ['Senado aprova', 'Câmara aprova'] }).catch(() => []),
+  ])
+  const cards = []
+  if (w) cards.push(weatherCard(w))
+  const vistas = []
+  const add = (it, kicker) => {
+    if (vistas.some((v) => parecidas(v, it.title))) return
+    vistas.push(it.title)
+    cards.push(newsCard(it, '', kicker))
+  }
+  principais.slice(0, 3).forEach((it) => add(it, 'MANCHETES DO DIA'))
+  politica.slice(0, 1).forEach((it) => add(it, 'POLÍTICA'))
+  ia.slice(0, 1).forEach((it) => add(it, 'INTELIGÊNCIA ARTIFICIAL'))
+  cards.push({
+    kind: 'status',
+    kicker: 'JORNAL DO DIA',
+    title: 'Diga “lê o jornal”',
+    text: 'Leitura de alguns minutos: política, direito, IA, economia, Pará e mundo.',
+    chips: ['POLÍTICA', 'DIREITO', 'IA', 'MUNDO'],
+  })
+  return cards
 }

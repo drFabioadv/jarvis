@@ -43,6 +43,17 @@ const SPEED: Record<Phase, number> = {
   speaking: 0.9,
 }
 
+/**
+ * Onde a esfera fica: no centro (sem cartões abertos) ou no canto superior
+ * esquerdo, menor (com cartões abertos). Ela desliza até lá suavemente.
+ */
+const layout = { x: 0.5, y: 0.47, scale: 1 }
+export function setOrbLayout(open: boolean) {
+  layout.x = open ? 0.19 : 0.5
+  layout.y = open ? 0.32 : 0.47
+  layout.scale = open ? 0.6 : 1
+}
+
 export function WireOrb() {
   const ref = useRef<HTMLCanvasElement>(null)
 
@@ -77,6 +88,7 @@ export function WireOrb() {
     let last = performance.now()
     let energy = 0
     let speedNow = 0.35
+    const pos = { x: layout.x, y: layout.y, scale: layout.scale }
 
     const resize = () => {
       dpr = Math.min(1.5, window.devicePixelRatio || 1)
@@ -107,9 +119,12 @@ export function WireOrb() {
 
       g.setTransform(dpr, 0, 0, dpr, 0, 0)
       g.clearRect(0, 0, w, h)
-      const cx = w / 2
-      const cy = h * 0.47
-      const R = Math.min(w, h) * 0.26 * (1 + energy * 0.18)
+      pos.x += (layout.x - pos.x) * 0.06
+      pos.y += (layout.y - pos.y) * 0.06
+      pos.scale += (layout.scale - pos.scale) * 0.06
+      const cx = w * pos.x
+      const cy = h * pos.y
+      const R = Math.min(w, h) * 0.26 * pos.scale * (1 + energy * 0.18)
       g.globalCompositeOperation = 'lighter'
       g.lineJoin = 'round'
 

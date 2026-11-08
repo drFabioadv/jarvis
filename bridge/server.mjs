@@ -16,8 +16,9 @@
  */
 
 import { WebSocketServer } from 'ws'
-import { handleLocal, loadConfig } from './local.mjs'
+import { handleLocal, loadConfig, painelInicial } from './local.mjs'
 import { ollamaChat, ollamaReady, needsClaude } from './ollama.mjs'
+import { iniciarIndice, indiceAtual } from './indice.mjs'
 import { timingSafeEqual } from 'node:crypto'
 import { fileURLToPath } from 'node:url'
 import { query } from '@anthropic-ai/claude-agent-sdk'
@@ -785,6 +786,9 @@ const http = await import('node:http')
 
 /** Pasta do projeto, onde fica o jarvis-config.json. */
 const PROJECT_ROOT = fileURLToPath(new URL('..', import.meta.url))
+
+// O índice do computador (apps, atalhos, pastas pessoais), renovado a cada 30 min.
+iniciarIndice(PROJECT_ROOT)
 
 /** Última fase informada pela interface — ver a rota /phase. */
 const uiPhase = { phase: '', at: 0, wakes: 0 }
@@ -1793,6 +1797,7 @@ wss.on('connection', (socket) => {
 
     if (msg.type === 'ask' && typeof msg.text === 'string' && !msg.local) {
       // Primeiro o cérebro local: o que ele resolver não gasta nada do Claude.
+      console.log(`[jarvis] pedido: ${msg.text}`)
       const localText = msg.text
       const localId = typeof msg.id === 'string' ? msg.id : null
       void tryLocal(localText, localId).then((handled) => {
@@ -1836,6 +1841,17 @@ wss.on('connection', (socket) => {
         clearTimeout(slot.timer)
         slot.resolve(msg)
       }
+    }
+
+    if (msg.type === 'painel') {
+      // O painel inicial: clima e notícias, sem fala e sem Claude.
+      void painelInicial(loadConfig(PROJECT_ROOT))
+        .then((cards) => {
+          const lote = String(Date.now())
+          cards.forEach((card, i) => send({ type: 'card', card: { id: `painel-${lote}-${i}`, painel: true, lote, ...card } }))
+        })
+        .catch(() => {})
+      return
     }
 
     if (msg.type === 'interrupt') {

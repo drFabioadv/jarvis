@@ -123,7 +123,9 @@ try {
 env.JARVIS_MODEL ??= userCfg.modeloClaude || 'haiku'
 env.JARVIS_EFFORT ??= userCfg.esforcoClaude || 'low'
 env.JARVIS_MAX_TURNS ??= String(userCfg.etapasMaximas || 8)
-env.JARVIS_DISABLE ??= userCfg.desligar ?? 'camera'
+// O controle do Chrome pedia autorizações confusas; abrir sites e programas
+// é feito direto pelo Windows (explorer.exe). Para religar: "desligar": "camera".
+env.JARVIS_DISABLE ??= userCfg.desligar ?? 'camera,browser'
 
 // Senha do atalho do iPhone: criada uma vez e guardada em atalho-token.txt.
 let token = firstLine('atalho-token.txt')

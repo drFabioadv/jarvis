@@ -141,7 +141,16 @@ export default function App() {
 
   // -- one turn -------------------------------------------------------------
 
-  const respond = async (said: string): Promise<void> => {
+  const lastAsk = useRef<{ text: string; at: number; answered: boolean } | null>(null)
+
+  const respond = async (heard: string): Promise<void> => {
+    // Você fez uma pausa no meio da frase e continuou: a primeira metade já
+    // tinha virado pedido, mas ainda não tinha resposta. Junta as duas em um
+    // pedido só, em vez de responder só à segunda metade.
+    const prev = lastAsk.current
+    const said =
+      prev && !prev.answered && Date.now() - prev.at < 12000 ? `${prev.text} ${heard}` : heard
+    lastAsk.current = { text: said, at: Date.now(), answered: false }
     const mine = ++turn.current
     const stale = () => mine !== turn.current
 
@@ -168,6 +177,7 @@ export default function App() {
       const { text } = await ask(said, history.current, {
         onText: (delta) => {
           if (stale()) return
+          if (lastAsk.current) lastAsk.current.answered = true
           if (!started) {
             started = true
             store.getState().setPhase('speaking')

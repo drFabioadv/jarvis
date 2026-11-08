@@ -52,6 +52,11 @@ export function watchPanels(fn: (panel: Panel) => void): void {
 /** Blades — the big surface — arrive the same way, from the `blade` tool. Like
  *  panels and the ui_* commands, this is a bridge capability: the direct path
  *  has no channel for a server to volunteer anything mid-turn. */
+/** Pede o painel inicial (clima e notícias) ao cérebro local. */
+export function requestPainel(): void {
+  if (usingBridge) bridge.requestPainel()
+}
+
 /** Cartões do briefing, vindos do cérebro local. */
 export function watchCards(fn: (card: Record<string, unknown>) => void): void {
   if (usingBridge) bridge.watchCards(fn)

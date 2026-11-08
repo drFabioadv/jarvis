@@ -3,15 +3,19 @@ import { AnimatePresence, motion } from 'framer-motion'
 import { useStore, type Phase } from '../store'
 import { useCards, type Card } from '../cards'
 import { BRIDGE_HTTP_URL } from '../config'
+import { requestPainel } from '../lib/brain'
 import { Blades } from './Blades'
 import { Effects } from './Effects'
 import { Pointer } from './Pointer'
-import { WireOrb } from './WireOrb'
+import { WireOrb, setOrbLayout } from './WireOrb'
 import { currentVoiceName } from '../lib/tts'
 
 /**
- * O layout do vídeo: grade azul, a esfera de fios no centro, o status no topo,
- * o cartão do momento grande no meio e os anteriores enfileirados embaixo.
+ * O layout: fundo preto com grade, a esfera de fios e os cartões.
+ *
+ * Sem cartões abertos, a esfera fica no centro. Com cartões, ela sobe para o
+ * canto superior esquerdo e os cartões ocupam a direita da tela. Cada cartão
+ * pode ser minimizado (vai para a aba embaixo da esfera) ou fechado.
  */
 
 const STATUS: Record<Phase, string> = {
@@ -31,90 +35,83 @@ const img = (src?: string) =>
 const fmt = (n?: number, dec = 1) =>
   n == null ? '—' : n.toLocaleString('pt-BR', { minimumFractionDigits: 0, maximumFractionDigits: dec })
 
-function Icon({ name }: { name: string }) {
-  const map: Record<string, string> = {
-    sol: '☀', 'nuvem-sol': '⛅', nuvem: '☁', chuva: '🌧', tempestade: '⛈',
-    clima: '✳', noticia: '◉', texto: '▣', lista: '▤', video: '▶', status: '◈',
-  }
-  return <span className="vh-icon">{map[name] ?? '◈'}</span>
+const ICON: Record<string, string> = {
+  sol: '☀', 'nuvem-sol': '⛅', nuvem: '☁', chuva: '🌧', tempestade: '⛈',
+  clima: '✳', noticia: '◉', texto: '▣', lista: '▤', video: '▶', status: '◈',
 }
+const Icon = ({ name }: { name: string }) => <span className="vh-icon">{ICON[name] ?? '◈'}</span>
 
-function CardHead({ c }: { c: Card }) {
+function CardView({ c, big }: { c: Card; big: boolean }) {
+  const cards = useCards.getState()
+  const open = () => {
+    if (c.link) window.open(c.link, '_blank', 'noopener')
+  }
   return (
-    <div className="vh-head">
-      <Icon name={c.kind} />
-      <div>
-        {c.kicker && <div className="vh-kicker">{c.kicker}</div>}
-        {c.title && c.kind !== 'status' && <div className="vh-title">{c.title}</div>}
+    <>
+      <div className="vh-head">
+        <Icon name={c.kind === 'clima' ? 'clima' : c.kind} />
+        <div onClick={open} style={{ cursor: c.link ? 'pointer' : 'default' }}>
+          {c.kicker && <div className="vh-kicker">{c.kicker}</div>}
+          {c.title && <div className="vh-title">{c.title}</div>}
+        </div>
+        <div className="vh-btns">
+          <button title="Minimizar" onClick={() => cards.minimize(c.id)}>–</button>
+          <button title="Fechar" onClick={() => cards.close(c.id)}>×</button>
+        </div>
       </div>
-      {c.source && <span className="vh-tag">{c.source.toUpperCase().slice(0, 18)}</span>}
-    </div>
-  )
-}
-
-function CardBody({ c, big }: { c: Card; big: boolean }) {
-  if (c.kind === 'status') {
-    return (
-      <div className="vh-status">
-        <div className="vh-kicker center">{c.kicker}</div>
-        <div className="vh-mono">{c.title}</div>
-        {c.text && <div className="vh-sub">{c.text}</div>}
-        {c.chips && (
-          <div className="vh-chips">
-            {c.chips.map((ch) => (
-              <span key={ch} className={ch === c.active ? 'on' : ''}>
-                {ch}
-              </span>
-            ))}
-          </div>
-        )}
-      </div>
-    )
-  }
-  if (c.kind === 'clima' && c.clima) {
-    const w = c.clima
-    return (
-      <div className="vh-weather">
-        <div className="vh-w-main">
-          <Icon name={w.icon ?? 'sol'} />
-          <div>
-            <div className="vh-temp">{fmt(w.temp)}°</div>
-            <div className="vh-sub">{w.desc}</div>
-          </div>
-          {big && (
-            <div className="vh-w-cols">
-              <div><span>MÍNIMA</span>{fmt(w.min)}°</div>
-              <div><span>MÁXIMA</span>{fmt(w.max)}°</div>
-              <div><span>SENSAÇÃO</span>{fmt(w.sensacao, 0)}°</div>
+      {c.kind === 'status' && (
+        <div className="vh-status">
+          {c.text && <div className="vh-sub">{c.text}</div>}
+          {c.chips && (
+            <div className="vh-chips">
+              {c.chips.map((ch) => (
+                <span key={ch} className={ch === c.active ? 'on' : ''}>
+                  {ch}
+                </span>
+              ))}
             </div>
           )}
         </div>
-        {big && (
-          <div className="vh-w-side">
-            <div><span>UMIDADE</span>{fmt(w.umidade, 0)}%</div>
-            <div><span>CHUVA</span>{fmt(w.chuva, 0)}%</div>
-            <div><span>VENTO</span>{fmt(w.vento)} km/h</div>
-          </div>
-        )}
-      </div>
-    )
-  }
-  return (
-    <div className="vh-body">
-      {c.image && (big || c.kind === 'video') && <img className="vh-img" src={img(c.image)} alt="" referrerPolicy="no-referrer" />}
-      {c.image && !big && c.kind !== 'video' && <img className="vh-thumb" src={img(c.image)} alt="" referrerPolicy="no-referrer" />}
-      {c.text && <div className="vh-text">{c.text}</div>}
-      {c.items && (
-        <ul className="vh-list">
-          {c.items.slice(0, big ? 8 : 3).map((it, i) => (
-            <li key={i}>
-              <b>{it.label}</b>
-              {it.sub && big && <span>{it.sub}</span>}
-            </li>
-          ))}
-        </ul>
       )}
-    </div>
+      {c.kind === 'clima' && c.clima && (
+        <div className="vh-weather">
+          <div className="vh-w-main">
+            <span className="vh-wicon">{ICON[c.clima.icon ?? 'sol'] ?? '☀'}</span>
+            <div>
+              <div className="vh-temp">{fmt(c.clima.temp)}°</div>
+              <div className="vh-sub">{c.clima.desc}</div>
+            </div>
+            <div className="vh-w-cols">
+              <div><span>MÍN</span>{fmt(c.clima.min)}°</div>
+              <div><span>MÁX</span>{fmt(c.clima.max)}°</div>
+              <div><span>SENSAÇÃO</span>{fmt(c.clima.sensacao, 0)}°</div>
+            </div>
+          </div>
+          <div className="vh-w-side">
+            <div><span>UMIDADE</span>{fmt(c.clima.umidade, 0)}%</div>
+            <div><span>CHUVA</span>{fmt(c.clima.chuva, 0)}%</div>
+            <div><span>VENTO</span>{fmt(c.clima.vento)} km/h</div>
+          </div>
+        </div>
+      )}
+      {c.kind !== 'status' && c.kind !== 'clima' && (
+        <div className="vh-body" onClick={open} style={{ cursor: c.link ? 'pointer' : 'default' }}>
+          {c.image && <img className={big ? 'vh-img' : 'vh-thumb'} src={img(c.image)} alt="" referrerPolicy="no-referrer" />}
+          {c.text && <div className="vh-text">{c.text}</div>}
+          {c.items && (
+            <ul className="vh-list">
+              {c.items.slice(0, 8).map((it, i) => (
+                <li key={i}>
+                  <b>{it.label}</b>
+                  {it.sub && <span>{it.sub}</span>}
+                </li>
+              ))}
+            </ul>
+          )}
+          {c.source && <div className="vh-src">{c.source.toUpperCase().slice(0, 24)}</div>}
+        </div>
+      )}
+    </>
   )
 }
 
@@ -125,13 +122,9 @@ function Clock() {
     return () => clearInterval(id)
   }, [])
   return (
-    <div className="vh-side-panel">
-      <div className="vh-kicker">SISTEMA · HOJE</div>
-      <div className="vh-clock">{now.toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' })}</div>
-      <div className="vh-sub">{now.toLocaleDateString('pt-BR', { weekday: 'long', day: 'numeric', month: 'long' })}</div>
-      <div className="vh-meter"><i style={{ width: '82%' }} /></div>
-      <div className="vh-mini"><span>CÉREBRO LOCAL</span><b>ATIVO</b></div>
-      <div className="vh-mini"><span>CLAUDE</span><b>SOB DEMANDA</b></div>
+    <div className="vh-clock-mini">
+      <b>{now.toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' })}</b>
+      <span>{now.toLocaleDateString('pt-BR', { weekday: 'short', day: 'numeric', month: 'short' })}</span>
     </div>
   )
 }
@@ -141,69 +134,94 @@ export function VideoHud() {
   const caption = useStore((s) => s.caption)
   const error = useStore((s) => s.error)
   const turns = useStore((s) => s.turns)
-  const active = useCards((s) => s.active)
-  const dock = useCards((s) => s.dock)
+  const slots = useCards((s) => s.slots)
+  const latest = useCards((s) => s.latest)
+  const open = slots.filter((x) => !x.min)
+  const mins = slots.filter((x) => x.min)
+  const hasOpen = open.length > 0
   const last = turns[turns.length - 1]
   const line = caption || (phase === 'speaking' && last?.role === 'jarvis' ? last.text.split(/(?<=[.!?])\s/).slice(-1)[0] : '')
 
+  useEffect(() => setOrbLayout(hasOpen), [hasOpen])
+
+  // O painel inicial: assim que ele fica pronto, e de novo a cada 30 minutos.
+  const [painelPedido, setPainelPedido] = useState(false)
+  useEffect(() => {
+    if (painelPedido || phase === 'offline' || phase === 'boot') return
+    setPainelPedido(true)
+    requestPainel()
+    const id = setInterval(requestPainel, 30 * 60 * 1000)
+    return () => clearInterval(id)
+  }, [phase, painelPedido])
+
   return (
-    <div className="vh">
+    <div className={`vh ${hasOpen ? 'vh-open' : 'vh-closed'}`}>
       <div className="vh-grid" />
       <WireOrb />
 
       <div className="vh-top">
         <div className="vh-pills">
           <span>◉ PERSONALIZADO · SINCRONIZADO</span>
-          <span>▣ GERENCIAR HUD</span>
+          <span className="vh-pill-btn" onClick={() => (hasOpen ? useCards.getState().minimizeAll() : useCards.getState().restoreAll())}>
+            ▣ {hasOpen ? 'MINIMIZAR TUDO' : 'MOSTRAR PAINEL'}
+          </span>
         </div>
         <div className={`vh-phase vh-phase-${phase}`}>{STATUS[phase]}</div>
         <div className="vh-dots" />
       </div>
-
       <Clock />
 
-      <div className="vh-stage">
+      <div className="vh-panel">
         <AnimatePresence mode="popLayout">
-          {active && (
-            <motion.div
-              key={active.id}
-              layoutId={active.id}
-              className={`vh-card vh-card-${active.kind} big`}
-              initial={{ opacity: 0, y: 30, scale: 0.94, filter: 'blur(8px)' }}
-              animate={{ opacity: 1, y: 0, scale: 1, filter: 'blur(0px)' }}
-              exit={{ opacity: 0, y: 40, scale: 0.9 }}
-              transition={{ type: 'spring', stiffness: 220, damping: 26 }}
-            >
-              {active.kind !== 'status' && <CardHead c={active} />}
-              <CardBody c={active} big />
-            </motion.div>
-          )}
+          {open.map(({ card }) => {
+            const big = card.id === latest && (card.kind === 'noticia' || card.kind === 'clima' || card.kind === 'lista')
+            return (
+              <motion.div
+                key={card.id}
+                layout
+                layoutId={card.id}
+                className={`vh-card vh-card-${card.kind} ${big ? 'destaque' : ''}`}
+                initial={{ opacity: 0, y: 24, scale: 0.95, filter: 'blur(6px)' }}
+                animate={{ opacity: 1, y: 0, scale: 1, filter: 'blur(0px)' }}
+                exit={{ opacity: 0, scale: 0.85, y: 20 }}
+                transition={{ type: 'spring', stiffness: 230, damping: 26 }}
+              >
+                <CardView c={card} big={big} />
+              </motion.div>
+            )
+          })}
         </AnimatePresence>
       </div>
 
-      <div className="vh-dock">
-        <AnimatePresence>
-          {dock.map((c) => (
-            <motion.div
-              key={c.id}
-              layoutId={c.id}
-              className={`vh-card vh-card-${c.kind} small`}
-              initial={{ opacity: 0, y: -40 }}
-              animate={{ opacity: 1, y: 0 }}
-              exit={{ opacity: 0 }}
-              transition={{ type: 'spring', stiffness: 240, damping: 28 }}
-            >
-              <CardHead c={c} />
-              <CardBody c={c} big={false} />
-            </motion.div>
-          ))}
-        </AnimatePresence>
-      </div>
+      {mins.length > 0 && (
+        <div className="vh-tab">
+          <div className="vh-tab-title">
+            INFORMAÇÕES · {mins.length}
+            <button onClick={() => useCards.getState().restoreAll()}>abrir tudo</button>
+          </div>
+          <div className="vh-tab-items">
+            {mins.map(({ card }) => (
+              <motion.button
+                key={card.id}
+                layoutId={card.id}
+                className="vh-chip"
+                onClick={() => useCards.getState().restore(card.id)}
+                title={card.title}
+              >
+                <span>{ICON[card.kind] ?? '◈'}</span>
+                <b>{card.kicker ?? card.kind}</b>
+                <i>{card.kind === 'clima' && card.clima ? `${fmt(card.clima.temp, 0)}° ${card.clima.cidade}` : card.title}</i>
+              </motion.button>
+            ))}
+          </div>
+        </div>
+      )}
 
       {line && <div className="vh-caption">{line}</div>}
       {error && <div className="vh-error">{error}</div>}
       <div className="vh-foot">
-        diga <b>“ei jarvis”</b> · <kbd>Espaço</kbd> para falar · <kbd>V</kbd> voz: {currentVoiceName().replace(/^Microsoft\s+/, '').replace(/\s*-.*$/, '')} · <kbd>D</kbd> diagnóstico
+        diga <b>“ei jarvis”</b> · <kbd>Espaço</kbd> para falar · <kbd>V</kbd> voz:{' '}
+        {currentVoiceName().replace(/^Microsoft\s+/, '').replace(/\s*-.*$/, '')} · <kbd>D</kbd> diagnóstico
       </div>
 
       <Blades />

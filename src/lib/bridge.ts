@@ -490,6 +490,11 @@ export async function ask(
  * already said is returned, so the caller's await always comes back and the
  * transcript keeps the half-sentence the user actually heard.
  */
+/** Pede ao cérebro o painel inicial (clima e notícias). */
+export function requestPainel(): void {
+  if (socket && socket.readyState === WebSocket.OPEN) socket.send(JSON.stringify({ type: 'painel' }))
+}
+
 export function cancel(): void {
   if (socket?.readyState === WebSocket.OPEN) {
     socket.send(JSON.stringify({ type: 'interrupt' }))
