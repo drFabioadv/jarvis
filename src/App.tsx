@@ -557,10 +557,22 @@ export default function App() {
 
   useEffect(() => {
     if (!APP_MODE || phase !== 'offline') return
-    // Uma pequena espera para a página assentar; se a ligação falhar (cérebro
-    // ainda subindo), o phase volta a 'offline' e este efeito tenta de novo.
-    const t = setTimeout(() => void powerOn(), 1500)
-    return () => clearTimeout(t)
+    // Liga sozinho; se o cérebro ainda estiver subindo (por exemplo, logo
+    // depois de uma atualização), tenta de novo a cada 4 segundos.
+    let tries = 0
+    const attempt = () => {
+      if (store.getState().phase !== 'offline') return
+      tries++
+      void powerOn()
+    }
+    const first = setTimeout(attempt, 1500)
+    const again = setInterval(() => {
+      if (store.getState().phase === 'offline' && tries < 60) attempt()
+    }, 4000)
+    return () => {
+      clearTimeout(first)
+      clearInterval(again)
+    }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [phase])
 
