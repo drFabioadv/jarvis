@@ -19,6 +19,7 @@ import { WebSocketServer } from 'ws'
 import { handleLocal, loadConfig, painelInicial } from './local.mjs'
 import { ollamaChat, ollamaReady, needsClaude } from './ollama.mjs'
 import { iniciarIndice, indiceAtual } from './indice.mjs'
+import { loadLocalStt, transcribeLocal } from './stt-local.mjs'
 import { timingSafeEqual } from 'node:crypto'
 import { fileURLToPath } from 'node:url'
 import { query } from '@anthropic-ai/claude-agent-sdk'
@@ -790,6 +791,12 @@ const PROJECT_ROOT = fileURLToPath(new URL('..', import.meta.url))
 // O índice do computador (apps, atalhos, pastas pessoais), renovado a cada 30 min.
 iniciarIndice(PROJECT_ROOT)
 
+// Audição local (Whisper no PC): ouve mesmo com a janela escondida ou num jogo.
+const AUDICAO_CFG = loadConfig(PROJECT_ROOT)
+const LOCAL_STT = !elevenKey() && (AUDICAO_CFG.audicao ?? 'local') === 'local' && process.env.JARVIS_LOCAL_STT !== '0'
+const LOCAL_STT_MODEL = AUDICAO_CFG.modeloVoz || 'onnx-community/whisper-base'
+if (LOCAL_STT) void loadLocalStt(LOCAL_STT_MODEL)
+
 /** Última fase informada pela interface — ver a rota /phase. */
 const uiPhase = { phase: '', at: 0, wakes: 0 }
 
@@ -904,7 +911,7 @@ const handleRequest = async (req, res) => {
     // student with nothing configured still has a working assistant.
     const eleven = Boolean(elevenKey())
     res.writeHead(200, { ...cors, 'content-type': 'application/json' })
-    return res.end(JSON.stringify({ ok: true, tts: eleven, stt: eleven }))
+    return res.end(JSON.stringify({ ok: true, tts: eleven, stt: eleven || LOCAL_STT, sttLocal: !eleven && LOCAL_STT }))
   }
 
   // Fase atual da interface, para o ícone da bandeja do Windows (JARVIS.vbs).
@@ -1146,6 +1153,29 @@ const handleRequest = async (req, res) => {
   // use, and a server-side transcriber cannot. Detecting that the user is
   // speaking at all is done locally with voice-activity detection, which never
   // touches this endpoint; this is only for the words.
+  if (req.method === 'POST' && req.url === '/stt' && (req.headers['content-type'] || '').startsWith('audio/pcm-f32-16k')) {
+    // Áudio já decodificado pelo navegador (16 kHz mono): Whisper local.
+    const chunks = []
+    let size = 0
+    for await (const chunk of req) {
+      chunks.push(chunk)
+      size += chunk.length
+      if (size > 16000 * 4 * 60) break
+    }
+    try {
+      const buf = Buffer.concat(chunks)
+      const pcm = new Float32Array(buf.buffer, buf.byteOffset, Math.floor(buf.length / 4))
+      const text = await transcribeLocal(pcm, LOCAL_STT_MODEL)
+      if (text) console.log(`[jarvis] ouviu: ${text}`)
+      res.writeHead(200, { ...cors, 'content-type': 'application/json' })
+      return res.end(JSON.stringify({ text }))
+    } catch (err) {
+      console.warn(`[jarvis] audição local falhou: ${err?.message ?? err}`)
+      res.writeHead(503, cors)
+      return res.end('local stt unavailable')
+    }
+  }
+
   if (req.method === 'POST' && req.url === '/stt') {
     const key = elevenKey()
     if (!key) {

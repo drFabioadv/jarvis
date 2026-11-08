@@ -22,6 +22,8 @@ export type Capabilities = {
   stt: boolean
   /** ElevenLabs text-to-speech is reachable via the bridge. */
   tts: boolean
+  /** A transcrição é o Whisper local: mandar o áudio já em PCM 16 kHz. */
+  sttLocal?: boolean
 }
 
 /** Browser-only until the probe says otherwise. Safe default: the app works. */
@@ -56,8 +58,8 @@ export async function probeCapabilities(): Promise<Capabilities> {
       signal: AbortSignal.timeout(3000),
     })
     if (res.ok) {
-      const h = (await res.json()) as { stt?: boolean; tts?: boolean }
-      current = { stt: Boolean(h.stt), tts: Boolean(h.tts) }
+      const h = (await res.json()) as { stt?: boolean; tts?: boolean; sttLocal?: boolean }
+      current = { stt: Boolean(h.stt), tts: Boolean(h.tts), sttLocal: Boolean(h.sttLocal) }
     }
   } catch {
     // Bridge down or slow — stay on the browser engines rather than blocking

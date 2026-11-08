@@ -202,7 +202,9 @@ export async function startVad(h: VadHandlers): Promise<Vad> {
 
   const tick = () => {
     if (stopped) return
-    raf = requestAnimationFrame(tick)
+    // Sem requestAnimationFrame: ele para com a janela escondida. Um relógio
+    // de 30 ms continua rodando em segundo plano.
+    raf = window.setTimeout(tick, 30) as unknown as number
 
     const energy = rms()
     smoothEnergy += (energy - smoothEnergy) * 0.5
@@ -255,7 +257,7 @@ export async function startVad(h: VadHandlers): Promise<Vad> {
   return {
     stop: () => {
       stopped = true
-      cancelAnimationFrame(raf)
+      clearTimeout(raf)
       discardRecorder()
       try {
         source.disconnect()

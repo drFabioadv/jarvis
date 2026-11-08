@@ -400,7 +400,7 @@ export async function startVoice(h: VoiceHandlers): Promise<Voice> {
     )
     return { stop: () => {}, live: () => false }
   }
-  diag.engine = caps().stt ? 'elevenlabs' : 'browser'
+  diag.engine = caps().sttLocal ? 'whisper local' : caps().stt ? 'elevenlabs' : 'navegador'
   return caps().stt ? startElevenVoice(h) : startBrowserVoice(h)
 }
 
@@ -447,15 +447,38 @@ async function startElevenVoice(h: VoiceHandlers): Promise<Voice> {
    * transcript arriving — and the transcript belongs to the mode the user is in
    * now, not the one they interrupted.
    */
+  const toPcm16k = async (blob: Blob): Promise<ArrayBuffer> => {
+    const raw = await blob.arrayBuffer()
+    const probe = new OfflineAudioContext(1, 1, 16000)
+    const decoded = await probe.decodeAudioData(raw)
+    const frames = Math.ceil(decoded.duration * 16000)
+    const ctx = new OfflineAudioContext(1, Math.max(1, frames), 16000)
+    const src = ctx.createBufferSource()
+    src.buffer = decoded
+    src.connect(ctx.destination)
+    src.start()
+    const out = await ctx.startRendering()
+    const pcm = out.getChannelData(0)
+    return pcm.buffer.slice(pcm.byteOffset, pcm.byteOffset + pcm.byteLength) as ArrayBuffer
+  }
+
   const transcribe = async (blob: Blob) => {
     const mode = h.mode()
     if (mode === 'deaf') return
     const t0 = performance.now()
     try {
+      // Whisper local: o navegador decodifica o trecho para 16 kHz mono e
+      // manda as amostras cruas, que o servidor entende sem precisar de ffmpeg.
+      let body: Blob | ArrayBuffer = blob
+      let type = blob.type || 'audio/webm'
+      if (caps().sttLocal) {
+        body = await toPcm16k(blob)
+        type = 'audio/pcm-f32-16k'
+      }
       const res = await fetch(`${BRIDGE_HTTP_URL}/stt`, {
         method: 'POST',
-        headers: { 'content-type': blob.type || 'audio/webm' },
-        body: blob,
+        headers: { 'content-type': type },
+        body,
       })
       diag.idleMs = Math.round(performance.now() - t0)
       if (!res.ok) {
