@@ -28,7 +28,7 @@ import { uiServer } from './ui.mjs'
 import { chromeAvailable, chromeServer } from './chrome.mjs'
 import { visionServer } from './vision.mjs'
 import { homedir, tmpdir } from 'node:os'
-import { mkdirSync, readFileSync, realpathSync } from 'node:fs'
+import { mkdirSync, readFileSync, realpathSync, writeFileSync } from 'node:fs'
 import { readFile, realpath, stat } from 'node:fs/promises'
 import { isAbsolute, join, relative, resolve as resolvePath } from 'node:path'
 import { openRemote, proxyError, vetTarget, PROXY_UA } from './net.mjs'
@@ -798,7 +798,47 @@ const LOCAL_STT_MODEL = AUDICAO_CFG.modeloVoz || 'onnx-community/whisper-small'
 if (LOCAL_STT) void loadLocalStt(LOCAL_STT_MODEL)
 
 /** Última fase informada pela interface — ver a rota /phase. */
-const uiPhase = { phase: '', at: 0, wakes: 0 }
+const uiPhase = { phase: '', at: 0, wakes: 0, aviso: '', avisoSeq: 0 }
+
+// ---- lembretes e timers -----------------------------------------------------
+// Guardados em lembretes.json (sobrevivem a reinícios). Quando vence, o JARVIS
+// fala em todas as janelas abertas e a bandeja mostra um aviso.
+const LEMBRETES_FILE = join(PROJECT_ROOT, 'lembretes.json')
+const clientes = new Set()
+let lembretes = []
+try {
+  lembretes = JSON.parse(readFileSync(LEMBRETES_FILE, 'utf8'))
+} catch {
+  lembretes = []
+}
+const salvarLembretes = () => {
+  try {
+    writeFileSync(LEMBRETES_FILE, JSON.stringify(lembretes, null, 1))
+  } catch {
+    /* segue em memória */
+  }
+}
+function lembrar({ quando, texto }) {
+  lembretes.push({ quando, texto, criado: Date.now() })
+  salvarLembretes()
+  console.log(`[jarvis] lembrete marcado para ${new Date(quando).toLocaleString('pt-BR')}: ${texto || 'timer'}`)
+}
+setInterval(() => {
+  const agora = Date.now()
+  const vencidos = lembretes.filter((l) => l.quando <= agora)
+  if (!vencidos.length) return
+  lembretes = lembretes.filter((l) => l.quando > agora)
+  salvarLembretes()
+  for (const l of vencidos) {
+    const fala = l.texto ? `Senhor, o lembrete: ${l.texto}.` : 'Senhor, o tempo do timer acabou.'
+    console.log(`[jarvis] lembrete: ${fala}`)
+    uiPhase.aviso = fala
+    uiPhase.avisoSeq++
+    for (const enviar of clientes) {
+      enviar({ type: 'aviso', text: fala, card: { id: `aviso-${l.criado}`, kind: 'texto', kicker: 'LEMBRETE', title: l.texto || 'Timer encerrado', text: new Date().toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' }) } })
+    }
+  }
+}, 5000).unref?.()
 
 // ---- atalho do iPhone ------------------------------------------------------
 // A Siri manda o que você ditou para POST /atalho (pelo Tailscale, que deixa o
@@ -866,7 +906,7 @@ async function handleAtalho(req, res) {
   console.log(`[jarvis] atalho do iPhone: ${text}`)
   const cfg = loadConfig(PROJECT_ROOT)
   try {
-    const steps = await handleLocal(text, { config: cfg, allowOpen: true, state: atalhoState })
+    const steps = await handleLocal(text, { config: cfg, allowOpen: true, state: atalhoState, lembrar })
     if (steps?.length) return reply(steps.map((st) => st.say).filter(Boolean).join(' '))
     const ia = cfg.iaLocal ?? {}
     const model = ia.modelo || 'qwen2.5:3b'
@@ -1765,12 +1805,14 @@ wss.on('connection', (socket) => {
   // ---- cérebro local (bridge/local.mjs) ------------------------------------
   let localSeq = 0
   const localState = { history: [] }
+  clientes.add(send)
+  socket.on('close', () => clientes.delete(send))
   const tryLocal = async (text, id) => {
     const my = ++localSeq
     let steps = null
     const cfg = loadConfig(PROJECT_ROOT)
     try {
-      steps = await handleLocal(text, { config: cfg, allowOpen: true, state: localState })
+      steps = await handleLocal(text, { config: cfg, allowOpen: true, state: localState, lembrar })
     } catch (err) {
       console.warn(`[jarvis] cérebro local falhou, passando ao Claude: ${err?.message ?? err}`)
       return false

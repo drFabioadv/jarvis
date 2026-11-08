@@ -87,6 +87,12 @@ export function watchCapture(fn: (req: CaptureRequest) => Promise<CaptureResult>
  *  already open as he starts the sentence about it. */
 let onBlade: ((blade: Blade) => void) | null = null
 let onCard: ((card: Record<string, unknown>) => void) | null = null
+let onAviso: ((text: string) => void) | null = null
+
+/** Lembretes vencidos: o cérebro pede para falar fora de uma conversa. */
+export function watchAvisos(fn: (text: string) => void) {
+  onAviso = fn
+}
 
 /** Cartões do briefing (cérebro local): clima, notícias, arquivos... */
 export function watchCards(fn: (card: Record<string, unknown>) => void) {
@@ -187,6 +193,10 @@ function dispatch(ws: WebSocket) {
       onPanel?.(msg.panel)
     } else if (msg.type === 'blade' && msg.blade) {
       onBlade?.(msg.blade)
+    } else if (msg.type === 'aviso') {
+      const m = msg as { text?: string; card?: Record<string, unknown> }
+      if (m.card) onCard?.(m.card)
+      if (m.text) onAviso?.(m.text)
     } else if (msg.type === 'card' && (msg as { card?: Record<string, unknown> }).card) {
       onCard?.((msg as { card: Record<string, unknown> }).card)
     } else if (msg.type === 'capture' && msg.id) {

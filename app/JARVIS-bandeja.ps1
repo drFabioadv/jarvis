@@ -222,6 +222,7 @@ $script:hwnd       = [IntPtr]::Zero
 $script:saindo     = $false
 $script:esconderAoAbrir = $true
 $script:wakes      = -1
+$script:avisoSeq   = $null
 $script:fase       = ''
 $script:ultimaFalha = Get-Date
 $script:ultimaAbertura = (Get-Date).AddMinutes(-1)
@@ -530,6 +531,14 @@ $timer.add_Tick({
         elseif ([JarvisWin]::Hidden) { $tray.ShowBalloonTip(1500, 'J.A.R.V.I.S.', 'Ouvindo...', 'Info') }
       }
       $script:wakes = [int]$st.wakes
+      # Lembrete vencido: aviso perto do relogio (alem da voz).
+      if ($null -ne $st.avisoSeq) {
+        if ($null -eq $script:avisoSeq) { $script:avisoSeq = [int]$st.avisoSeq }
+        elseif ([int]$st.avisoSeq -gt $script:avisoSeq) {
+          $script:avisoSeq = [int]$st.avisoSeq
+          $tray.ShowBalloonTip(8000, 'J.A.R.V.I.S. - lembrete', [string]$st.aviso, 'Info')
+        }
+      }
       if ($st.phase -ne $script:fase) {
         $script:fase = $st.phase
         switch ($st.phase) {

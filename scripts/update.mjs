@@ -39,7 +39,7 @@ const REPO = (() => {
 })() || 'drFabioadv/jarvis'
 const BRANCH = 'main'
 const VERSION_FILE = join(ROOT, 'versao.txt')
-const KEEP = new Set(['node_modules', 'logs', 'dist', '.git', 'jarvis-config.json', 'elevenlabs.txt', 'elevenlabs-voz.txt', 'versao.txt', 'atualizacao.txt', 'atalho-token.txt', 'indice-computador.json'])
+const KEEP = new Set(['node_modules', 'logs', 'dist', '.git', 'jarvis-config.json', 'elevenlabs.txt', 'elevenlabs-voz.txt', 'versao.txt', 'atualizacao.txt', 'atalho-token.txt', 'indice-computador.json', 'lembretes.json'])
 
 mkdirSync(join(ROOT, 'logs'), { recursive: true })
 const log = (m) => {

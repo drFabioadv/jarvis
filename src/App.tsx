@@ -26,6 +26,7 @@ import {
   watchPanels,
   watchBlades,
   watchCards,
+  watchAvisos,
   watchCapture,
   watchUi,
   watchConnection,
@@ -401,6 +402,12 @@ export default function App() {
     watchPanels((panel) => store.getState().pushPanel(panel))
     watchBlades((blade) => store.getState().pushBlade(blade))
     watchCards((card) => useCards.getState().push(card as never))
+    // Lembrete vencido: fala por cima de tudo, mesmo em espera ou escondido.
+    watchAvisos((text) => {
+      const spk = createSpeaker()
+      spk.say(text)
+      void spk.end()
+    })
 
     /**
      * JARVIS asking to see something.

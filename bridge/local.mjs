@@ -659,6 +659,87 @@ function restorer(raw) {
   }
 }
 
+// ------------------------------------------------------------------ sistema
+
+/** Roda um comando curto do PowerShell, escondido. */
+function ps(command) {
+  if (platform() !== 'win32') return false
+  return runProgram('powershell.exe', ['-NoProfile', '-NonInteractive', '-WindowStyle', 'Hidden', '-Command', command])
+}
+
+/** Aperta uma tecla especial (volume, mídia) n vezes. */
+const tecla = (code, n = 1) =>
+  ps(`$w = New-Object -ComObject WScript.Shell; 1..${n} | ForEach-Object { $w.SendKeys([char]${code}) }`)
+
+/** Comandos do Windows: volume, mídia, tela. Devolve a fala ou null. */
+function comandoSistema(t, ctx) {
+  const run = ctx.ps ?? ps
+  const key = ctx.tecla ?? tecla
+  const n = Number(/\b(\d{1,3})\s*(?:%|por cento)/.exec(t)?.[1] ?? 0)
+  if (/\b(muta|mutar|silencia|silenciar|tira o som|tira o audio|sem som)\b/.test(t)) return key(173) && 'Som desligado.'
+  if (/\b(volume no maximo|volume maximo|volume todo)\b/.test(t)) return key(175, 50) && 'Volume no máximo.'
+  if (/\b(aumenta|aumente|sobe|suba|mais alto|aumentar)\b.*\b(volume|som)\b|\b(volume|som) (mais alto|pra cima)\b/.test(t))
+    return key(175, n ? Math.ceil(n / 2) : 5) && 'Volume aumentado.'
+  if (/\b(abaixa|abaixe|diminui|diminua|baixa|baixe|mais baixo|diminuir)\b.*\b(volume|som)\b|\b(volume|som) (mais baixo|pra baixo)\b/.test(t))
+    return key(174, n ? Math.ceil(n / 2) : 5) && 'Volume diminuído.'
+  if (/\b(pausa|pause|pausar|continua a musica|da play|despausa|play na musica|tocar de novo)\b/.test(t) && !/\byoutube\b/.test(t))
+    return key(179) && 'Feito.'
+  if (/\b(proxima musica|pula a musica|pula essa|proxima faixa|passa a musica|avanca a musica)\b/.test(t)) return key(176) && 'Próxima.'
+  if (/\b(musica anterior|volta a musica|faixa anterior)\b/.test(t)) return key(177) && 'Voltando.'
+  if (/\b(bloqueia|bloquear|trava|travar) (a tela|o computador|o pc)\b/.test(t))
+    return runProgram('rundll32.exe', ['user32.dll,LockWorkStation']) && 'Tela bloqueada.'
+  if (/\b(tira|tire|faz|faca) (um )?(print|captura de tela|screenshot)\b/.test(t))
+    return (ctx.open ?? openThing)('ms-screenclip:') && 'Selecione a área da tela.'
+  if (/\b(minimiza tudo|minimizar tudo|mostra a area de trabalho|mostrar a area de trabalho)\b/.test(t))
+    return run('(New-Object -ComObject Shell.Application).MinimizeAll()') && 'Área de trabalho à vista.'
+  return null
+}
+
+// ------------------------------------------------------------------ lembretes
+
+/**
+ * "me lembra em 10 minutos de tirar o bolo", "timer de 5 minutos",
+ * "me lembra às 15h de ligar para o cliente", "me avisa daqui a 1 hora".
+ * Devolve { quando (ms epoch), texto } ou null.
+ */
+export function lerLembrete(t) {
+  if (!/\b(lembra|lembre|lembrete|avisa|avise|timer|temporizador|alarme|despertador|cronometro)\b/.test(t)) return null
+  const NUM = { um: 1, uma: 1, dois: 2, duas: 2, tres: 3, quatro: 4, cinco: 5, seis: 6, sete: 7, oito: 8, nove: 9, dez: 10, quinze: 15, vinte: 20, trinta: 30, quarenta: 40, cinquenta: 50, meia: 0.5 }
+  const num = (x) => (x == null ? NaN : /^\d/.test(x) ? Number(x) : NUM[x] ?? NaN)
+  let quando = 0
+  const rel = /\b(?:em|daqui a|daqui|de|por)\s+(\d+|um|uma|dois|duas|tres|quatro|cinco|seis|sete|oito|nove|dez|quinze|vinte|trinta|quarenta|cinquenta|meia)\s*(segundos?|minutos?|min|horas?|h)\b/.exec(t)
+  if (rel) {
+    const v = num(rel[1])
+    const u = rel[2]
+    const ms = /^s/.test(u) ? 1000 : /^h/.test(u) ? 3600000 : 60000
+    if (!Number.isNaN(v)) quando = Date.now() + v * ms
+  }
+  if (!quando && /\bmeia hora\b/.test(t)) quando = Date.now() + 30 * 60000
+  const abs = /\b(?:as|a)\s+(\d{1,2})(?:\s*(?:h|horas?|:)\s*(\d{1,2})?)?\b/.exec(t)
+  if (!quando && abs) {
+    const d = new Date()
+    let h = Number(abs[1])
+    const m = Number(abs[2] ?? 0)
+    if (/\b(da tarde|da noite)\b/.test(t) && h < 12) h += 12
+    d.setHours(h, m, 0, 0)
+    if (d.getTime() <= Date.now()) d.setDate(d.getDate() + 1)
+    quando = d.getTime()
+  }
+  if (!quando) return null
+  const resto = t.replace(/^.*?\b(lembra|lembre|avisa|avise|lembrete)(-me)?\b\s*(me\s+)?/, '')
+  let texto = resto
+    .replace(/\b(?:em|daqui a|daqui|as|a|de|por)\s+(?:\d+|um|uma|dois|duas|tres|quatro|cinco|seis|sete|oito|nove|dez|quinze|vinte|trinta|quarenta|cinquenta|meia)\s*(?:segundos?|minutos?|min|horas?|h\b)?(?:\s*\d{1,2})?/g, ' ')
+    .replace(/\b(meia hora|da tarde|da noite|da manha)\b/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim()
+    .replace(/^(de|para|pra|que|do|da)\s+/, '')
+    .replace(/^(cria|crie|marca|marque|coloca|coloque|bota|poe|faz|faca|um|uma|novo|nova|\s)+(alarme|timer|temporizador|lembrete|despertador|cronometro)\b\s*(de|para|pra)?/, '')
+    .trim()
+  if (/^(timer|temporizador|cronometro|alarme|despertador)$|^$/.test(texto)) texto = ''
+  if (/\b(timer|temporizador|cronometro|alarme|despertador)\b/.test(t) && !texto) texto = ''
+  return { quando, texto }
+}
+
 // ------------------------------------------------------------------ o roteador
 
 /**
@@ -685,6 +766,28 @@ export async function handleLocal(raw, ctx) {
   // ---- jornal do dia
   if (/\b(jornal|the news|leitura do dia|noticias do dia completas|ler as noticias|le as noticias|leia as noticias)\b/.test(t)) {
     return jornal(cfg)
+  }
+
+  // ---- comandos do Windows (volume, mídia, tela)
+  if (allowOpen) {
+    const sis = comandoSistema(t, { ...ctx, open: opener })
+    if (sis) return [{ say: sis }]
+  }
+
+  // ---- lembretes e timers
+  const lemb = lerLembrete(t)
+  if (lemb && ctx.lembrar) {
+    lemb.texto = lemb.texto ? R(lemb.texto) : ''
+    ctx.lembrar(lemb)
+    const d = new Date(lemb.quando)
+    const seg = Math.round((lemb.quando - Date.now()) / 1000)
+    const min = Math.round(seg / 60)
+    const quando =
+      seg < 60 ? `em ${falarNumero(seg)} segundos` : min < 60 ? (min <= 1 ? 'em um minuto' : `em ${falarNumero(min)} minutos`) : `às ${falarHora(d)}`
+    return [{
+      say: lemb.texto ? `Combinado. Eu te lembro ${quando}.` : `Timer marcado. Eu aviso ${quando}.`,
+      card: { kind: 'texto', kicker: 'LEMBRETE', title: lemb.texto || 'Timer', text: d.toLocaleString('pt-BR', { weekday: 'short', hour: '2-digit', minute: '2-digit' }) },
+    }]
   }
 
   // ---- hora e data
