@@ -1,0 +1,19 @@
+{
+  "_leia": "Provedores compatíveis com a API da OpenAI e os modelos de cada nível. Troque à vontade, sem mexer no código. As chaves NÃO ficam aqui: 'chaveEnv' diz em qual variável de ambiente está a chave.",
+  "provedores": {
+    "serverless": { "baseUrl": "https://SEU-PROVEDOR-DE-MODELOS-ABERTOS/v1", "chaveEnv": "LLM_SERVERLESS_KEY" },
+    "gpu": { "baseUrl": "http://SEU-SERVIDOR-GPU:8000/v1", "chaveEnv": "VLLM_API_KEY" },
+    "ollama": { "baseUrl": "http://ollama:11434/v1" }
+  },
+  "niveis": {
+    "rapido": [{ "provedor": "serverless", "modelo": "ID-DE-UM-QWEN-PEQUENO" }, { "provedor": "ollama", "modelo": "qwen2.5:3b" }],
+    "principal": [{ "provedor": "gpu", "modelo": "ID-DO-MODELO-NO-VLLM", "timeoutMs": 60000 }, { "provedor": "serverless", "modelo": "ID-DE-UM-QWEN-MEDIO" }],
+    "avancado": [{ "provedor": "serverless", "modelo": "ID-DE-UM-MODELO-GRANDE" }],
+    "visao": [{ "provedor": "serverless", "modelo": "ID-DE-UM-MODELO-COM-VISAO" }],
+    "embeddings": [{ "provedor": "serverless", "modelo": "ID-DE-UM-MODELO-DE-EMBEDDINGS" }]
+  },
+  "precos": {
+    "ID-DE-UM-QWEN-MEDIO": { "entrada": 0.2, "saida": 0.6 }
+  },
+  "orcamento": { "diarioUsd": 1.0, "maxTokensResposta": 1200, "maxTokensTarefa": 40000 }
+}

@@ -1,0 +1,4 @@
+node_modules
+.env
+modelos.json
+backups/

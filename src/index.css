@@ -2838,3 +2838,38 @@ body::before {
 .rt-cmd { font-size: 12px; color: rgba(224, 231, 255, 0.65); margin-top: 4px; }
 .rt-hist { margin-top: 8px; font-size: 12px; color: rgba(224, 231, 255, 0.7); display: flex; flex-direction: column; gap: 3px; }
 .md-btn:disabled { opacity: 0.4; cursor: default; }
+
+/* ---- JARVIS 3.0: porta de entrada e conta ---- */
+.np-fundo { position: fixed; inset: 0; background: #000; display: flex; align-items: center; justify-content: center; padding: 16px; z-index: 200; }
+.np-caixa { width: min(420px, 100%); background: rgba(8, 8, 22, 0.92); border: 1px solid rgba(139, 92, 246, 0.45); border-radius: 14px; padding: 24px; display: flex; flex-direction: column; gap: 12px; box-shadow: 0 0 50px rgba(99, 102, 241, 0.2); color: #e0e7ff; }
+.np-logo { font: 700 28px ui-monospace, Consolas, monospace; letter-spacing: 0.3em; text-align: center; background: linear-gradient(90deg, #38bdf8, #8b5cf6); -webkit-background-clip: text; background-clip: text; color: transparent; }
+.np-tit { text-align: center; font: 600 12px ui-monospace, Consolas, monospace; letter-spacing: 0.2em; color: #7dd3fc; text-transform: uppercase; }
+.np-caixa form { display: flex; flex-direction: column; gap: 10px; }
+.np-caixa input, .np-conta input[type='file'] { background: #05050f; border: 1px solid rgba(139, 92, 246, 0.4); border-radius: 8px; color: #e0e7ff; padding: 11px 12px; font: 15px system-ui, 'Segoe UI', sans-serif; }
+.np-caixa button, .np-conta button, .np-btn, .np-pend button { padding: 10px 14px; border-radius: 8px; border: 0; background: linear-gradient(90deg, #2563eb, #7c3aed); color: #fff; font: 600 14px system-ui, 'Segoe UI', sans-serif; cursor: pointer; text-decoration: none; text-align: center; }
+.np-caixa button:disabled { opacity: 0.5; }
+button.np-sec, .np-pend button.np-sec { background: transparent; border: 1px solid rgba(139, 92, 246, 0.5); }
+.np-ajuda { font-size: 13px; color: rgba(224, 231, 255, 0.75); line-height: 1.5; margin: 0; }
+.np-ajuda a { color: #7dd3fc; }
+.np-erro { color: #fca5a5; font-size: 13px; }
+.np-msg { color: #a7f3d0; font-size: 13px; margin-top: 8px; }
+.np-chave { font-size: 15px; letter-spacing: 0.1em; color: #fbbf24; }
+.np-codigos { display: grid; grid-template-columns: 1fr 1fr; gap: 6px; }
+.np-codigos code { background: #05050f; padding: 6px; border-radius: 6px; text-align: center; color: #fbbf24; }
+.np-botao-conta { position: fixed; left: 14px; bottom: 14px; z-index: 60; width: 40px; height: 40px; border-radius: 50%; border: 1px solid rgba(139, 92, 246, 0.5); background: rgba(8, 8, 22, 0.8); color: #c4b5fd; font-size: 18px; cursor: pointer; }
+.np-conta { position: fixed; left: 50%; top: 50%; transform: translate(-50%, -50%); z-index: 70; width: min(760px, calc(100vw - 32px)); max-height: calc(100vh - 32px); display: flex; flex-direction: column; background: rgba(6, 6, 18, 0.96); border: 1px solid rgba(139, 92, 246, 0.45); border-radius: 14px; color: #e0e7ff; box-shadow: 0 0 60px rgba(99, 102, 241, 0.25); }
+.np-conta-topo { display: flex; justify-content: space-between; align-items: center; padding: 12px 16px; border-bottom: 1px solid rgba(139, 92, 246, 0.25); font: 700 12px ui-monospace, Consolas, monospace; letter-spacing: 0.2em; color: #c4b5fd; }
+.np-conta-topo button { padding: 4px 10px; background: transparent; border: 1px solid rgba(139, 92, 246, 0.4); }
+.np-abas { display: flex; gap: 6px; padding: 10px 16px; flex-wrap: wrap; }
+.np-abas button { padding: 6px 10px; font-size: 12px; background: transparent; border: 1px solid rgba(139, 92, 246, 0.35); }
+.np-abas button.on { background: linear-gradient(90deg, #2563eb, #7c3aed); border-color: transparent; }
+.np-conta-corpo { padding: 4px 16px 16px; overflow-y: auto; display: flex; flex-direction: column; gap: 10px; font-size: 14px; }
+.np-linha { display: flex; gap: 10px; align-items: center; flex-wrap: wrap; }
+.np-linha button { padding: 6px 10px; font-size: 12px; }
+.np-linha small { color: rgba(224, 231, 255, 0.5); }
+.np-flex { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; }
+.np-sub { font: 700 10px ui-monospace, Consolas, monospace; letter-spacing: 0.2em; color: #7dd3fc; margin-top: 6px; }
+.np-pend { position: fixed; left: 50%; transform: translateX(-50%); bottom: 70px; z-index: 65; display: flex; flex-direction: column; gap: 8px; width: min(640px, calc(100vw - 32px)); }
+.np-pend-item { display: flex; gap: 8px; align-items: center; background: rgba(40, 24, 4, 0.95); border: 1px solid rgba(245, 158, 11, 0.6); border-radius: 10px; padding: 10px 12px; color: #fde68a; font-size: 14px; }
+.np-pend-item span { flex: 1; }
+.np-pend-item button { padding: 7px 12px; font-size: 13px; }

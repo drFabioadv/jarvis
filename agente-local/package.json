@@ -1,0 +1,10 @@
+{
+  "name": "jarvis-agente-local",
+  "private": true,
+  "version": "3.0.0",
+  "description": "Agente local opcional do JARVIS 3.0: conecta o PC à nuvem (conexão de saída) e executa só comandos permitidos.",
+  "type": "module",
+  "engines": { "node": ">=22" },
+  "bin": { "jarvis-agente": "jarvis-agente.mjs" },
+  "dependencies": { "ws": "^8.18.0" }
+}

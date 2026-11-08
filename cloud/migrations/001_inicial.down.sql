@@ -1,0 +1,1 @@
+DROP TABLE IF EXISTS oauth_estados, integracoes, codigos_pareamento, dispositivos, push_inscricoes, acoes_pendentes, uso_modelos, trabalhos, rotinas, lembretes, tarefas, mensagens, conversas, memoria_relacoes, memorias, config_owner, auditoria, tentativas_login, desafios_webauthn, sessoes, passkeys, codigos_recuperacao, codigos_setup, owners CASCADE;

@@ -1,6 +1,7 @@
 import { BACKEND } from '../config'
 import * as direct from './anthropic'
 import * as bridge from './bridge'
+import * as nuvem from './cloud'
 import type { AskHandlers, Msg } from './anthropic'
 import type { Blade, Panel } from '../store'
 
@@ -21,6 +22,8 @@ export type { ConnectionState } from './bridge'
  */
 
 export const usingBridge = BACKEND === 'bridge'
+/** JARVIS 3.0: a API própria na nuvem, sem nenhum serviço da Anthropic. */
+export const usingCloud = BACKEND === 'cloud'
 
 /** Conversation state lives in the bridge session, so history is only threaded
  *  through on the direct path. */
@@ -29,6 +32,7 @@ export async function ask(
   history: Msg[],
   handlers: AskHandlers,
 ): Promise<{ text: string; tools: string[] }> {
+  if (usingCloud) return nuvem.ask(prompt, handlers)
   return usingBridge
     ? bridge.ask(prompt, handlers)
     : direct.ask([...history, { role: 'user', content: prompt }], handlers)
@@ -59,7 +63,8 @@ export function watchAvisos(fn: (text: string) => void): void {
 
 /** Segundo cérebro (só pela bridge). */
 export function sendCerebro(msg: Record<string, unknown>): void {
-  if (usingBridge) bridge.sendCerebro(msg)
+  if (usingCloud) void import('./cloud-cerebro').then((m) => m.enviar(msg))
+  else if (usingBridge) bridge.sendCerebro(msg)
 }
 
 /** Pede o painel inicial (clima e notícias) ao cérebro local. */
@@ -111,7 +116,8 @@ export function watchCapture(
  * path by aborting the stream so the model stops generating and billing.
  */
 export function cancel(): void {
-  if (usingBridge) bridge.cancel()
+  if (usingCloud) nuvem.cancel()
+  else if (usingBridge) bridge.cancel()
   else direct.cancel()
 }
 
@@ -128,6 +134,7 @@ export function interrupt(): void {
  * so there is nothing that can be down until you try it.
  */
 export function isConnected(): boolean {
+  if (usingCloud) return nuvem.isConnected()
   return usingBridge ? bridge.isConnected() : true
 }
 
@@ -147,5 +154,6 @@ export function watchConnection(
 
 /** Labels for the HUD's SYSTEMS rail. */
 export function connectedLabels(): string[] {
+  if (usingCloud) return ['NUVEM']
   return usingBridge ? bridge.bridgeServers() : direct.connectedLabels()
 }

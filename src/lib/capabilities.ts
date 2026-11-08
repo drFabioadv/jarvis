@@ -47,6 +47,17 @@ export function capabilitiesProbed(): boolean {
  * place, which is the correct behaviour when the bridge is unreachable.
  */
 export async function probeCapabilities(): Promise<Capabilities> {
+  if (BACKEND === 'cloud') {
+    // JARVIS 3.0: a audição pode rodar no servidor (Whisper); a voz, no aparelho.
+    try {
+      const h = (await (await fetch('/api/saude', { signal: AbortSignal.timeout(3000) })).json()) as { sttNuvem?: boolean }
+      current = { stt: Boolean(h.sttNuvem), tts: false, sttLocal: Boolean(h.sttNuvem) }
+    } catch {
+      current = { stt: false, tts: false }
+    }
+    probed = true
+    return current
+  }
   if (BACKEND !== 'bridge') {
     // No bridge to ask. Direct mode has no server-side speech, so browser only.
     current = { stt: false, tts: false }

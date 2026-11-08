@@ -1,3 +1,7 @@
+> **JARVIS 3.0 (nuvem, sem Anthropic):** a plataforma independente — API própria, modelos abertos,
+> PostgreSQL/pgvector, filas, PWA e agente local — está em [`cloud/`](cloud/README.md).
+> Este diretório raiz continua sendo o JARVIS do PC (2.x).
+
 # J.A.R.V.I.S.
 
 A browser voice assistant with an Iron Man holographic interface. Say

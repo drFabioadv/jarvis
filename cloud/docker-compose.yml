@@ -1,0 +1,92 @@
+# J.A.R.V.I.S. 3.0 — produção numa VPS. Só o Caddy (HTTPS) fica exposto.
+#   cp .env.exemplo .env   (preencha)   →   docker compose up -d --build
+name: jarvis
+
+x-app: &app
+  image: jarvis:3
+  build:
+    context: ..
+    dockerfile: cloud/Dockerfile
+    args:
+      STT: ${JARVIS_STT_NUVEM:-0}
+  env_file: .env
+  environment:
+    JARVIS_MODELOS: /app/modelos.json
+  volumes:
+    - ./modelos.json:/app/modelos.json:ro
+    - modelos:/data/modelos
+  restart: unless-stopped
+  depends_on:
+    postgres: { condition: service_healthy }
+    redis: { condition: service_healthy }
+  networks: [interna]
+  logging: { driver: json-file, options: { max-size: 10m, max-file: '5' } }
+
+services:
+  api:
+    <<: *app
+    command: ['node', 'src/server.mjs']
+
+  worker:
+    <<: *app
+    command: ['node', 'src/worker.mjs']
+    healthcheck:
+      test: ['CMD', 'node', '-e', "const n=require('net').connect(6379,'redis',()=>{n.end();process.exit(0)});n.on('error',()=>process.exit(1))"]
+      interval: 60s
+
+  postgres:
+    image: pgvector/pgvector:pg16
+    environment:
+      POSTGRES_USER: jarvis
+      POSTGRES_DB: jarvis
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?defina POSTGRES_PASSWORD no .env}
+    volumes: [pgdados:/var/lib/postgresql/data]
+    healthcheck: { test: ['CMD-SHELL', 'pg_isready -U jarvis -d jarvis'], interval: 10s, timeout: 5s, retries: 10 }
+    restart: unless-stopped
+    networks: [interna]
+    logging: { driver: json-file, options: { max-size: 10m, max-file: '3' } }
+
+  redis:
+    image: redis:7-alpine
+    # AOF: a fila sobrevive a reinícios sem perder trabalhos.
+    command: ['redis-server', '--appendonly', 'yes', '--appendfsync', 'everysec', '--maxmemory-policy', 'noeviction']
+    volumes: [redisdados:/data]
+    healthcheck: { test: ['CMD', 'redis-cli', 'ping'], interval: 10s, timeout: 3s, retries: 10 }
+    restart: unless-stopped
+    networks: [interna]
+
+  searxng:
+    image: searxng/searxng:latest
+    environment:
+      SEARXNG_BASE_URL: http://searxng:8080/
+      SEARXNG_SECRET: ${SEARXNG_SECRET:?defina SEARXNG_SECRET no .env}
+      # Escuta em IPv4 (nem toda VPS tem IPv6 dentro do Docker).
+      GRANIAN_HOST: 0.0.0.0
+    volumes: [./searxng/settings.yml:/etc/searxng/settings.yml:ro]
+    restart: unless-stopped
+    networks: [interna]
+
+  caddy:
+    image: caddy:2
+    ports: ['80:80', '443:443', '443:443/udp']
+    environment:
+      DOMINIO: ${DOMINIO:?defina DOMINIO no .env}
+      EMAIL_CERTIFICADO: ${EMAIL_CERTIFICADO:-}
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddydados:/data
+      - caddyconfig:/config
+    depends_on: [api]
+    restart: unless-stopped
+    networks: [interna]
+
+  # Opcional: painel de monitoramento (docker compose --profile monitoramento up -d).
+  monitor:
+    image: louislam/uptime-kuma:1
+    profiles: [monitoramento]
+    volumes: [monitordados:/app/data]
+    restart: unless-stopped
+    networks: [interna]
+
+volumes: { pgdados: {}, redisdados: {}, caddydados: {}, caddyconfig: {}, modelos: {}, monitordados: {} }
+networks: { interna: {} }

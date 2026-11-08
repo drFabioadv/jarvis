@@ -1,0 +1,14 @@
+# SearXNG próprio: busca na web sem chave e sem rastreio. Só a API do JARVIS o acessa.
+use_default_settings: true
+general:
+  instance_name: jarvis-busca
+search:
+  safe_search: 0
+  default_lang: pt-BR
+  formats: [html, json]
+server:
+  limiter: false
+  image_proxy: false
+  public_instance: false
+ui:
+  default_locale: pt

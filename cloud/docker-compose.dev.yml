@@ -1,0 +1,17 @@
+# Desenvolvimento/teste local: tudo no seu PC, com um modelo aberto pequeno
+# no Ollama e a API em http://localhost:8080 (sem Caddy).
+#   docker compose -f docker-compose.yml -f docker-compose.dev.yml up -d --build
+#   docker compose exec ollama ollama pull qwen2.5:3b
+services:
+  api:
+    ports: ['8080:8080']
+    environment:
+      PUBLIC_URL: http://localhost:8080
+      JARVIS_MODELOS: /app/modelos.json
+  ollama:
+    image: ollama/ollama:latest
+    volumes: [ollama:/root/.ollama]
+    networks: [interna]
+  caddy:
+    profiles: [nunca]
+volumes: { ollama: {} }

@@ -41,3 +41,9 @@ digest-ultimo.txt
 tarefas.json
 rotinas.json
 historico.json
+dist-cloud
+cloud/node_modules
+agente-local/node_modules
+cloud/.env
+cloud/modelos.json
+cloud/backups/

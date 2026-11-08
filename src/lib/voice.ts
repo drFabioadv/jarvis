@@ -1,4 +1,4 @@
-import { BRIDGE_HTTP_URL } from '../config'
+import { BACKEND, BRIDGE_HTTP_URL } from '../config'
 import { getMic } from './audio'
 import { speakingNow, speakingSince } from './tts'
 import { startVad, type Vad } from './vad'
@@ -475,9 +475,10 @@ async function startElevenVoice(h: VoiceHandlers): Promise<Voice> {
         body = await toPcm16k(blob)
         type = 'audio/pcm-f32-16k'
       }
-      const res = await fetch(`${BRIDGE_HTTP_URL}/stt`, {
+      const res = await fetch(BACKEND === 'cloud' ? '/api/stt' : `${BRIDGE_HTTP_URL}/stt`, {
         method: 'POST',
-        headers: { 'content-type': type },
+        headers: { 'content-type': type, ...(BACKEND === 'cloud' ? { 'x-jarvis': '1' } : {}) },
+        credentials: 'same-origin',
         body,
       })
       diag.idleMs = Math.round(performance.now() - t0)
