@@ -245,7 +245,9 @@ export function SecondBrain() {
           })}
 
           {Array.from({ length: 12 }, (_, i) => (
-            <circle key={`d-${i}`} ref={(el) => (dots.current[i] = el)} r={2.6} fill="#fff" opacity={0} filter="url(#sb-glow)" />
+            <circle key={`d-${i}`} ref={(el) => {
+              dots.current[i] = el
+            }} r={2.6} fill="#fff" opacity={0} filter="url(#sb-glow)" />
           ))}
         </svg>
       </div>

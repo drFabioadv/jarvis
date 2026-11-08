@@ -7,6 +7,7 @@ import { Diagnostics } from './ui/Diagnostics'
 import { VoiceRing } from './ui/VoiceRing'
 import { VideoHud } from './ui/VideoHud'
 import { useCerebro } from './cerebro'
+import { alertarOrb } from './ui/WireOrb'
 import { useInteg, abrirPainel } from './integ'
 import { useCards } from './cards'
 import { useStore } from './store'
@@ -476,6 +477,7 @@ export default function App() {
     watchCards((card) => useCards.getState().push(card as never))
     // Lembrete vencido: fala por cima de tudo, mesmo em espera ou escondido.
     watchAvisos((text) => {
+      alertarOrb()
       const spk = createSpeaker()
       spk.say(text)
       void spk.end()

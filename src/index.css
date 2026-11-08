@@ -2784,7 +2784,57 @@ body::before {
 .md-nome { width: 120px; flex: none; }
 .md-url { flex: 1; }
 .md-senha { width: 150px; flex: none; }
-.md-linha button { width: 28px; height: 28px; flex: none; border-radius: 7px; border: 1px solid rgba(255, 85, 71, 0.5); background: transparent; color: #ff8a80; cursor: pointer; }
+.md-linha button:not(.md-btn) { width: 28px; height: 28px; flex: none; border-radius: 7px; border: 1px solid rgba(255, 85, 71, 0.5); background: transparent; color: #ff8a80; cursor: pointer; }
 .md-campo { display: flex; flex-direction: column; gap: 6px; font-size: 13px; color: rgba(224, 231, 255, 0.8); }
 .md-check { display: flex; gap: 8px; align-items: center; font-size: 13px; color: rgba(224, 231, 255, 0.8); }
 @media (max-width: 700px) { .md-linha { flex-wrap: wrap; } .md-nome, .md-senha { width: calc(50% - 25px); } }
+
+/* ---- Central de comando e rotinas ---- */
+.ct-grade { display: grid; grid-template-columns: repeat(auto-fill, minmax(260px, 1fr)); gap: 12px; align-content: start; }
+.ct-mod { background: rgba(139, 92, 246, 0.06); border: 1px solid rgba(139, 92, 246, 0.2); border-radius: 10px; padding: 10px 12px; display: flex; flex-direction: column; gap: 6px; animation: md-in 0.35s ease-out both; min-width: 0; }
+.ct-mod.oculto { opacity: 0.35; }
+.ct-tarefas, .ct-historico { grid-row: span 2; }
+.ct-mod-tit { display: flex; justify-content: space-between; align-items: center; font: 700 10px ui-monospace, Consolas, monospace; letter-spacing: 0.22em; color: #7dd3fc; }
+.ct-edit { display: flex; gap: 4px; }
+.ct-edit button, .ct-tarefa button, .ct-add button, .rt-acts button { width: 24px; height: 24px; border-radius: 6px; border: 1px solid rgba(139, 92, 246, 0.4); background: rgba(139, 92, 246, 0.1); color: #e0e7ff; cursor: pointer; font-size: 12px; flex: none; }
+.ct-relogio b { display: block; font: 600 40px ui-monospace, Consolas, monospace; color: #e0e7ff; letter-spacing: 0.05em; }
+.ct-relogio span { font-size: 13px; color: rgba(224, 231, 255, 0.6); text-transform: capitalize; }
+.ct-clima { display: flex; gap: 12px; align-items: center; }
+.ct-clima b { font: 600 34px ui-monospace, Consolas, monospace; color: #fbbf24; }
+.ct-clima span { font-size: 12px; color: rgba(224, 231, 255, 0.7); }
+.ct-linha { font-size: 13px; color: #e0e7ff; border-left: 3px solid rgba(139, 92, 246, 0.4); padding: 3px 8px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.ct-linha small { color: rgba(224, 231, 255, 0.5); }
+.ct-linha .md-hora { min-width: 0; margin-right: 6px; font-size: 11px; }
+.ct-add { display: flex; gap: 6px; }
+.ct-add input { flex: 1; min-width: 0; background: #05050f; border: 1px solid rgba(139, 92, 246, 0.35); border-radius: 7px; color: #e0e7ff; padding: 6px 8px; font: 13px system-ui, 'Segoe UI', sans-serif; }
+.ct-tarefa { display: flex; align-items: center; gap: 8px; font-size: 13px; padding: 3px 0; }
+.ct-tarefa > span { flex: 1; min-width: 0; }
+.ct-tarefa small { color: rgba(224, 231, 255, 0.5); }
+.ct-tarefa.atrasada small { color: #fca5a5; }
+.ct-tarefa input[type='checkbox'] { accent-color: #8b5cf6; width: 16px; height: 16px; cursor: pointer; }
+.ct-alta { display: inline-block; font-style: normal; background: #f59e0b; color: #111; border-radius: 4px; padding: 0 5px; margin-right: 6px; font-weight: 700; font-size: 11px; }
+.ct-dot { display: inline-block; width: 8px; height: 8px; border-radius: 50%; background: rgba(224, 231, 255, 0.3); margin-right: 6px; vertical-align: 0; }
+.ct-dot.on { background: #34d399; box-shadow: 0 0 8px #34d399; }
+.ct-dot.mal { background: #f87171; box-shadow: 0 0 8px #f87171; }
+.ct-sis { display: flex; flex-direction: column; gap: 4px; font-size: 12px; color: rgba(224, 231, 255, 0.75); }
+.ct-sis b { color: #e0e7ff; margin-right: 6px; }
+.md-flex { flex: 1; }
+.md-campo input:not([type='range']) { background: #05050f; border: 1px solid rgba(139, 92, 246, 0.35); border-radius: 7px; color: #e0e7ff; padding: 7px 9px; font: 13px system-ui, 'Segoe UI', sans-serif; }
+.md-campo input[type='range'] { accent-color: #8b5cf6; }
+.rt-form { border: 1px solid rgba(56, 189, 248, 0.35); border-radius: 10px; padding: 12px; display: flex; flex-direction: column; gap: 8px; background: rgba(56, 189, 248, 0.05); }
+.rt-desc, .rt-quando select, .rt-quando input { background: #05050f; border: 1px solid rgba(139, 92, 246, 0.35); border-radius: 7px; color: #e0e7ff; padding: 7px 9px; font: 13px system-ui, 'Segoe UI', sans-serif; }
+.rt-quando label { font-size: 13px; color: rgba(224, 231, 255, 0.8); }
+.rt-quando label input { width: 70px; }
+.rt-dias { display: flex; gap: 6px; }
+.rt-dias button { padding: 4px 10px; border-radius: 6px; border: 1px solid rgba(139, 92, 246, 0.4); background: transparent; color: #e0e7ff; cursor: pointer; }
+.rt-dias button.on { background: linear-gradient(90deg, #2563eb, #7c3aed); border-color: transparent; }
+.rt-modelos { display: flex; flex-wrap: wrap; gap: 8px; justify-content: center; }
+.rt-item { border: 1px solid rgba(139, 92, 246, 0.25); border-radius: 10px; padding: 10px 12px; background: rgba(139, 92, 246, 0.06); animation: md-in 0.35s ease-out both; }
+.rt-item.pausada { opacity: 0.6; }
+.rt-top { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+.rt-top b { font-size: 14px; }
+.rt-top small { font-size: 11px; color: rgba(224, 231, 255, 0.55); }
+.rt-acts { margin-left: auto; display: flex; gap: 4px; }
+.rt-cmd { font-size: 12px; color: rgba(224, 231, 255, 0.65); margin-top: 4px; }
+.rt-hist { margin-top: 8px; font-size: 12px; color: rgba(224, 231, 255, 0.7); display: flex; flex-direction: column; gap: 3px; }
+.md-btn:disabled { opacity: 0.4; cursor: default; }

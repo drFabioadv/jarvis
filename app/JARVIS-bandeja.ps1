@@ -392,6 +392,7 @@ $miAtualizar = $menu.Items.Add('Procurar atualizacao agora')
 $miVoz       = $menu.Items.Add('Voz natural (ElevenLabs)...')
 $miIphone    = $menu.Items.Add('Atalho do iPhone (senha)')
 $miConfig    = $menu.Items.Add('Preferencias (cidade, temas, modelo)')
+$miDiag      = $menu.Items.Add('Diagnostico (estado de cada parte)')
 $miLogs      = $menu.Items.Add('Abrir registros (para suporte)')
 $menu.Items.Add('-') | Out-Null
 $miSair      = $menu.Items.Add('Sair (desligar o JARVIS)')
@@ -420,6 +421,7 @@ $miVoz.add_Click({
 })
 $miIphone.add_Click({ Start-Process notepad.exe (Join-Path $Root 'atalho-token.txt') })
 $miConfig.add_Click({ Start-Process notepad.exe (Join-Path $Root 'jarvis-config.json') })
+$miDiag.add_Click({ Start-Process 'http://127.0.0.1:8787/diagnostico' })
 $miLogs.add_Click({ Start-Process explorer.exe $Logs })
 $tray.add_MouseClick({
   param($s, $e)

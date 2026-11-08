@@ -366,7 +366,7 @@ const WMO = {
   95: ['trovoadas', 'tempestade'], 96: ['trovoadas com granizo', 'tempestade'], 99: ['trovoadas com granizo', 'tempestade'],
 }
 
-async function geocode(city) {
+export async function geocode(city) {
   const j = await getJson(
     `https://geocoding-api.open-meteo.com/v1/search?name=${encodeURIComponent(city)}&count=1&language=pt&format=json`,
   )
@@ -644,11 +644,12 @@ function filesCard(query, hits) {
  * normalizado ("inteligencia artificial" → "inteligência artificial").
  */
 function restorer(raw) {
+  // Siglas (CNH, PNCP, OAB) mantêm as maiúsculas; o resto vai em minúsculas.
   const rawTokens = String(raw)
-    .toLowerCase()
     .replace(/[^\p{L}\p{N} ]+/gu, ' ')
     .split(/\s+/)
     .filter(Boolean)
+    .map((w) => (/^[\p{Lu}\d]{2,}$/u.test(w) && /\p{Lu}/u.test(w) ? w : w.toLowerCase()))
   const normTokens = rawTokens.map((w) => norm(w))
   return (piece) => {
     const want = norm(piece).split(' ').filter(Boolean)
@@ -782,6 +783,22 @@ export async function handleLocal(raw, ctx) {
     if (/^(nao|agora nao|depois|deixa|dispenso|nem|nada)\b/.test(t)) return [{ say: 'Muito bem, senhor. Estou à disposição.' }]
   }
 
+  // ---- confirmações ("Confirma?"): apagar nota/tarefa, criar evento...
+  if (state.pending && typeof state.pending === 'object') {
+    const p = state.pending
+    state.pending = null
+    if (Date.now() - p.at < 90000) {
+      if (/^(sim|confirmo|confirma|pode|pode sim|claro|isso|ok|okay|beleza|manda|vai|faz|faca|com certeza|positivo|uhum)\b/.test(t)) return p.sim()
+      if (/^(nao|cancela|deixa|esquece|negativo|nem|agora nao|para)\b/.test(t)) return [{ say: 'Tudo bem, cancelado.' }]
+    }
+  }
+
+  // ---- tarefas, memória, rotinas, histórico, agenda avançada
+  if (ctx.org) {
+    const r = await organizacao(t, R, ctx, { state, allowOpen, opener })
+    if (r) return r
+  }
+
   // ---- segundo cérebro: "anota que...", "guarda no meu cérebro que..."
   if (ctx.salvarNota) {
     const m = t.match(/^(?:anota|anote|guarda|guarde|grava|grave|registra|registre|salva|salve|memoriza|memorize|lembra|lembre)(?: ai| isso)?(?: (?:no|em) (?:meu |seu )?(?:segundo )?cerebro| na (?:sua )?memoria)?(?: que|:) (.{3,})$/)
@@ -832,7 +849,7 @@ export async function handleLocal(raw, ctx) {
   // ---- briefing / morning digest
   if (/^(bom dia|boa tarde|boa noite)\b/.test(t) || /\b(briefing|digest|me atualiza|me atualize|resumo do dia|novidades do dia|o que tem de novo)\b/.test(t)) {
     ctx.integ?.marcarDigest?.()
-    return briefing(t, cfg, state, ctx.integ)
+    return briefing(t, cfg, state, ctx.integ, ctx.org)
   }
 
   // ---- agenda e e-mails
@@ -992,7 +1009,7 @@ function fraseDeFoco() {
   return f[0].toUpperCase() + f.slice(1) + '.'
 }
 
-async function briefing(t, cfg, state, integ) {
+async function briefing(t, cfg, state, integ, org) {
   const now = new Date()
   const steps = []
   steps.push({
@@ -1039,6 +1056,14 @@ async function briefing(t, cfg, state, integ) {
         card: emailsCard(st.emails),
       })
     }
+    // Tarefas que vencem hoje (ou atrasadas) e compromissos que se sobrepõem.
+    const { vencendo, cf } = resumoOrganizacao(org, st.temAgenda ? eventosDoDia(st.eventos, 0) : [])
+    if (cf.length) steps.push({ say: `Atenção: ${cf[0][0].titulo} e ${cf[0][1].titulo} se sobrepõem hoje.` })
+    if (vencendo.length)
+      steps.push({
+        say: `${vencendo.length === 1 ? 'Uma tarefa vence' : `${falarNumeroF(vencendo.length)} tarefas vencem`} hoje ou estão atrasadas: ${vencendo.slice(0, 3).map((x) => x.texto).join('; ')}.`,
+        card: tarefasCard(vencendo, 'TAREFAS · HOJE'),
+      })
     if (!st.temAgenda && !st.temEmail) {
       steps.push({ say: '', card: { kind: 'lista', kicker: 'SEUS APPS', title: 'Agenda e e-mails', items: [{ label: '📅 Agenda', sub: 'configure no ⚙' }, { label: '✉ E-mails', sub: 'configure no ⚙' }] } })
     }
@@ -1265,4 +1290,351 @@ async function agendaEmails(t, integ) {
     return [{ say: acao.length ? `${cab} Os de ação: ${acao.slice(0, 4).map((e) => `${e.de}: ${e.resumo}`).join('. ')}.` : cab, abrir: 'emails' }]
   }
   return null
+}
+
+
+// ---------------------------------------------------------------- organização
+
+/** Número por extenso no feminino (uma tarefa, duas rotinas). */
+const falarNumeroF = (n) => (n === 1 ? 'uma' : n === 2 ? 'duas' : falarNumero(n))
+
+const SEMANA = ['domingo', 'segunda', 'terca', 'quarta', 'quinta', 'sexta', 'sabado']
+
+/** "amanhã", "sexta", "depois de amanhã", "dia 20" → dias a partir de hoje (ou null). */
+export function diaDoTexto(t) {
+  if (/\bdepois de amanha\b/.test(t)) return 2
+  if (/\bamanha\b/.test(t)) return 1
+  if (/\bhoje\b/.test(t)) return 0
+  const m = t.match(/\b(segunda|terca|quarta|quinta|sexta|sabado|domingo)\b/)
+  if (m) {
+    const alvo = SEMANA.indexOf(m[1])
+    const hoje = new Date().getDay()
+    let d = (alvo - hoje + 7) % 7
+    if (d === 0 && /\b(que vem|proxima|proximo)\b/.test(t)) d = 7
+    return d
+  }
+  const dm = t.match(/\bdia (\d{1,2})\b/)
+  if (dm) {
+    const n = +dm[1]
+    const hoje = new Date()
+    const alvo = new Date(hoje.getFullYear(), hoje.getMonth() + (n < hoje.getDate() ? 1 : 0), n)
+    const ini = new Date()
+    ini.setHours(0, 0, 0, 0)
+    return Math.round((alvo - ini) / 86400000)
+  }
+  return null
+}
+
+function nomeDoDia(d) {
+  if (d === 0) return 'hoje'
+  if (d === 1) return 'amanhã'
+  if (d === 2) return 'depois de amanhã'
+  const dt = new Date()
+  dt.setDate(dt.getDate() + d)
+  return `${DIAS[dt.getDay()]}, dia ${dt.getDate()}`
+}
+
+/** "às 14", "as 14h30", "às 9 e meia", "14:00", "duas da tarde" (número) */
+export function horaDoTexto(t) {
+  const m = t.match(/\b(?:as|a partir das|pras|para as)\s+(\d{1,2})(?:\s*(?:horas?|h))?(?:\s*(?:e\s+)?(\d{2}|meia)\b)?(?:\s*(?:horas?|minutos?|h))?(?:\s+da\s+(manha|tarde|noite))?/) || t.match(/\b(\d{1,2})\s*(?:h|:)\s*(\d{2})?\b/)
+  if (!m) return null
+  let h = +m[1]
+  const min = m[2] === 'meia' ? 30 : m[2] ? +m[2] : 0
+  if ((m[3] === 'tarde' || m[3] === 'noite') && h < 12) h += 12
+  if (h > 23 || min > 59) return null
+  return { h, min }
+}
+
+const fimDoDia = (d) => {
+  const x = new Date()
+  x.setDate(x.getDate() + d)
+  x.setHours(23, 59, 0, 0)
+  return x.getTime()
+}
+
+function eventosNoDia(eventos, d) {
+  const ini = new Date()
+  ini.setHours(0, 0, 0, 0)
+  ini.setDate(ini.getDate() + d)
+  const fim = ini.getTime() + 86400000
+  return eventos.filter((e) => e.inicio < fim && e.fim > ini.getTime())
+}
+
+/** Pares de compromissos (com horário) que se sobrepõem. */
+export function conflitos(evs) {
+  const c = evs.filter((e) => !e.diaTodo).sort((a, b) => a.inicio - b.inicio)
+  const out = []
+  for (let i = 0; i < c.length; i++) for (let j = i + 1; j < c.length && c[j].inicio < c[i].fim; j++) out.push([c[i], c[j]])
+  return out
+}
+
+/** Intervalos livres (≥ 30 min) entre 8h e 19h no dia `d`. */
+export function horariosLivres(eventos, d, de = 8, ate = 19) {
+  const base = new Date()
+  base.setHours(0, 0, 0, 0)
+  base.setDate(base.getDate() + d)
+  let cursor = Math.max(base.getTime() + de * 3600000, d === 0 ? Math.ceil(Date.now() / 900000) * 900000 : 0)
+  const limite = base.getTime() + ate * 3600000
+  const ocup = eventosNoDia(eventos, d)
+    .filter((e) => !e.diaTodo)
+    .sort((a, b) => a.inicio - b.inicio)
+  const livres = []
+  for (const e of ocup) {
+    if (e.inicio - cursor >= 30 * 60000 && cursor < limite) livres.push([cursor, Math.min(e.inicio, limite)])
+    cursor = Math.max(cursor, e.fim)
+  }
+  if (limite - cursor >= 30 * 60000) livres.push([cursor, limite])
+  return livres
+}
+
+const hm = (t) => falarHora(new Date(t))
+
+function pendente(state, sim) {
+  state.pending = { at: Date.now(), sim }
+}
+
+function linkGoogleAgenda(titulo, inicio, fim) {
+  const f = (t) => {
+    const d = new Date(t)
+    const z = (n) => String(n).padStart(2, '0')
+    return `${d.getFullYear()}${z(d.getMonth() + 1)}${z(d.getDate())}T${z(d.getHours())}${z(d.getMinutes())}00`
+  }
+  const tz = Intl.DateTimeFormat().resolvedOptions().timeZone || 'America/Sao_Paulo'
+  return `https://calendar.google.com/calendar/render?action=TEMPLATE&text=${encodeURIComponent(titulo)}&dates=${f(inicio)}/${f(fim)}&ctz=${encodeURIComponent(tz)}`
+}
+
+function tarefasCard(ts, kicker = 'TAREFAS') {
+  return {
+    kind: 'lista',
+    kicker,
+    title: ts.length ? `${ts.length} pendente${ts.length > 1 ? 's' : ''}` : 'Nada pendente',
+    items: ts.slice(0, 8).map((x) => ({ label: `${x.prioridade === 'alta' ? '❗ ' : ''}${x.texto}`, sub: x.prazo ? `até ${new Date(x.prazo).toLocaleDateString('pt-BR', { weekday: 'short', day: '2-digit', month: '2-digit' })}` : '' })),
+  }
+}
+
+/** Busca nas notas do segundo cérebro. */
+export function buscarNotas(q, notas) {
+  const termos = clean(q).split(' ').filter((w) => w.length > 2 && !STOP.has(w))
+  if (!termos.length) return []
+  return notas
+    .map((n) => {
+      const titulo = clean(n.title)
+      const corpo = clean(`${n.title} ${n.body}`)
+      let pts = 0
+      for (const w of termos) {
+        const raiz = w.length > 5 ? w.slice(0, -2) : w
+        if (titulo.includes(raiz)) pts += 3
+        else if (corpo.includes(raiz)) pts += 1
+      }
+      return { n, pts: pts / termos.length }
+    })
+    .filter((x) => x.pts >= 0.5)
+    .sort((a, b) => b.pts - a.pts)
+    .map((x) => x.n)
+}
+
+async function organizacao(t, R, ctx, { state, allowOpen, opener }) {
+  const org = ctx.org
+  const st = () => ctx.integ?.estado?.() ?? { eventos: [], emails: [], temAgenda: false, temEmail: false }
+
+  // ======== TAREFAS
+  let m = t.match(/^(?:adiciona|adicione|acrescenta|cria|crie|coloca|coloque|bota|inclui|inclua|anota|anote|poe|ponha)(?: uma| a)? (?:tarefa|na (?:minha )?lista(?: de tarefas)?|nas (?:minhas )?tarefas)(?: de| pra| para|:)? (.{3,})$/)
+  if (!m) m = t.match(/^(?:nova tarefa|tarefa nova|tarefa)(?: de|:)? (.{3,})$/)
+  if (m) {
+    let txt = m[1]
+    let prazo = null
+    const pz = txt.match(/\s+(?:pra|para|ate|até)\s+(hoje|amanha|depois de amanha|(?:a |o )?(?:proxima |proximo )?(?:segunda|terca|quarta|quinta|sexta|sabado|domingo)(?: que vem)?|dia \d{1,2})$/)
+    if (pz) {
+      const d = diaDoTexto(pz[1])
+      if (d !== null) prazo = fimDoDia(d)
+      txt = txt.slice(0, pz.index)
+    }
+    const alta = /\b(urgente|importante|prioridade)\b/.test(txt)
+    const texto = R(txt.replace(/\b(urgente|com prioridade)\b/g, '').trim())
+    const { tarefa, duplicada } = org.adicionarTarefa({ texto: texto[0].toUpperCase() + texto.slice(1), prazo, prioridade: alta ? 'alta' : 'normal' })
+    org.registrar('tarefa', `nova: ${tarefa.texto}`)
+    org.avisarOrg?.()
+    return [{ say: duplicada ? 'Essa tarefa já estava na lista, senhor.' : `Tarefa anotada${prazo ? `, para ${nomeDoDia(diaDoTexto(pz[1]))}` : ''}.`, card: tarefasCard(org.listarTarefas(), 'TAREFA ADICIONADA') }]
+  }
+
+  if (/\b(minhas tarefas|lista de tarefas|minha lista|tarefas pendentes|tarefas (de hoje|abertas|da semana)|o que (eu )?tenho (pra|para|que) fazer|quais (sao )?(as )?(minhas )?tarefas)\b/.test(t)) {
+    const ts = org.listarTarefas().sort((a, b) => (b.prioridade === 'alta') - (a.prioridade === 'alta') || (a.prazo ?? 9e15) - (b.prazo ?? 9e15))
+    if (!ts.length) return [{ say: 'Sua lista de tarefas está vazia, senhor.' }]
+    const atras = ts.filter((x) => x.prazo && x.prazo < Date.now())
+    return [{ say: `${ts.length === 1 ? 'Uma tarefa pendente' : `${falarNumeroF(ts.length)} tarefas pendentes`}: ${ts.slice(0, 5).map((x) => x.texto).join('; ')}.${atras.length ? ` ${atras.length === 1 ? 'Uma está atrasada' : `${falarNumeroF(atras.length)} estão atrasadas`}.` : ''}`, card: tarefasCard(ts), abrir: 'central' }]
+  }
+
+  m = t.match(/^(?:conclui|concluir|conclua|risca|terminei|ja fiz|ja terminei|finalizei|fiz|marca como (?:feita|concluida)|da baixa (?:em|na))(?: a)?(?: tarefa)?(?: de)? (.{3,})$/) || t.match(/^marca(?: a)? tarefa (.{3,}?) como (?:feita|concluida)$/)
+  if (m) {
+    const tf = org.concluirTarefa(m[1])
+    if (!tf) return [{ say: 'Não encontrei essa tarefa na lista, senhor.' }]
+    org.registrar('tarefa', `concluída: ${tf.texto}`)
+    org.avisarOrg?.()
+    const resto = org.listarTarefas().length
+    return [{ say: `Feito: ${tf.texto}. ${resto ? `Restam ${falarNumeroF(resto)}.` : 'Lista zerada, senhor.'}` }]
+  }
+
+  m = t.match(/^(?:apaga|apague|remove|remova|exclui|exclua|tira|tire)(?: a)? tarefa(?: de)? (.{3,})$/)
+  if (m) {
+    const tf = org.acharTarefa(m[1])
+    if (!tf) return [{ say: 'Não encontrei essa tarefa, senhor.' }]
+    pendente(state, () => {
+      org.removerTarefa(tf.id)
+      org.registrar('tarefa', `removida: ${tf.texto}`)
+      org.avisarOrg?.()
+      return [{ say: 'Tarefa removida.' }]
+    })
+    return [{ say: `Apagar a tarefa "${tf.texto}"? Confirma?` }]
+  }
+
+  // ======== MEMÓRIA (segundo cérebro)
+  m = t.match(/^(?:esquece|esqueca|apaga|apague|remove|remova|exclui|exclua)(?: a| essa)? (?:nota|anotacao|memoria|informacao)(?: sobre| de| do| da| que fala de)? (.{2,})$/)
+  if (m) {
+    const notas = buscarNotas(m[1], cerebro().notas)
+    if (!notas.length) return [{ say: 'Não achei nenhuma nota sobre isso, senhor.' }]
+    const n = notas[0]
+    pendente(state, () => {
+      ctx.excluirNota?.(n.id)
+      org.registrar('memoria', `nota apagada: ${n.title}`)
+      return [{ say: `Pronto, esqueci a nota ${n.title}.` }]
+    })
+    return [{ say: `Apagar a nota "${n.title}" do seu segundo cérebro? Confirma?`, card: { kind: 'texto', kicker: 'SEGUNDO CÉREBRO · APAGAR?', title: n.title, text: n.body } }]
+  }
+
+  const explicita = t.match(/^(?:procura|procure|busca|busque|pesquisa|pesquise|acha|ache)(?: isso| aquilo| aquela informacao| a informacao)?(?: que (?:eu )?(?:te )?pedi (?:pra|para) (?:guardar|anotar))? (?:nas? (?:minhas )?notas|no (?:meu )?(?:segundo )?cerebro|na (?:sua )?memoria)(?: sobre| por| de)? (.{2,})$/) ||
+    t.match(/^(?:o que (?:eu )?(?:te )?(?:pedi|falei|disse) (?:pra|para) (?:guardar|anotar)|o que (?:eu )?tinha (?:decidido|anotado|guardado|combinado)|o que (?:voce )?(?:tem|guardou|anotou) (?:anotado |guardado )?)(?: sobre| de| do| da| com)? (.{2,})$/)
+  const solta = !explicita && t.match(/^o que (?:voce )?sabe (?:sobre|de) (?:mim|meu|minha|meus|minhas|o meu|a minha) ?(.*)$/)
+  if (explicita || solta) {
+    const q = (explicita ?? solta)[1] || ''
+    const notas = q ? buscarNotas(q, cerebro().notas) : cerebro().notas.filter((n) => n.area === 'meta')
+    if (!notas.length) {
+      if (explicita) return [{ say: 'Não encontrei nada guardado sobre isso, senhor.' }]
+      return null
+    }
+    const top = notas.slice(0, 3)
+    return [
+      {
+        say: top.map((n) => `${n.title}: ${n.body}`).join(' ').slice(0, 600),
+        card: { kind: 'lista', kicker: 'SEGUNDO CÉREBRO · BUSCA', title: q ? R(q) : 'Sobre você', items: top.map((n) => ({ label: n.title, sub: n.body.slice(0, 140) })) },
+      },
+    ]
+  }
+
+  // ======== HISTÓRICO
+  if (/\b(o que (eu )?(te )?pedi hoje|o que eu (te )?pedi|historico de comandos|ultimos comandos|ultimos pedidos|o que voce fez hoje)\b/.test(t)) {
+    const hoje = new Date().setHours(0, 0, 0, 0)
+    const hs = org.listarHistorico(80).filter((h) => h.at >= hoje && h.tipo === 'pedido').slice(1, 7)
+    if (!hs.length) return [{ say: 'Hoje você ainda não me pediu nada além disso, senhor.' }]
+    return [{ say: `Hoje você me pediu: ${hs.map((h) => h.texto).join('; ')}.`, abrir: 'central' }]
+  }
+
+  // ======== ROTINAS
+  if (/\b(minhas rotinas|quais (sao )?(as )?(minhas )?rotinas|minhas automacoes|automacoes ativas)\b/.test(t)) {
+    const rs = org.listarRotinas()
+    if (!rs.length) return [{ say: 'Nenhuma rotina criada ainda. Você pode criar na central de rotinas.', abrir: 'rotinas' }]
+    return [{ say: `${rs.length === 1 ? 'Uma rotina' : `${falarNumeroF(rs.length)} rotinas`}: ${rs.map((r) => `${r.nome}${r.ativa ? '' : ', pausada'}`).join('; ')}.`, abrir: 'rotinas' }]
+  }
+  m = t.match(/^(pausa|pause|desativa|desative|ativa|ative|liga|religa|retoma)(?: a)? rotina(?: de| do| da)? (.{2,})$/)
+  if (m) {
+    const r = org.listarRotinas().find((x) => clean(x.nome).includes(m[2]) || parecidoSimples(x.nome, m[2]))
+    if (!r) return [{ say: 'Não encontrei essa rotina, senhor.' }]
+    const ativa = !/^(pausa|pause|desativa|desative)/.test(m[1])
+    org.pausarRotina(r.id, ativa)
+    org.avisarOrg?.()
+    return [{ say: `Rotina ${r.nome} ${ativa ? 'ativada' : 'pausada'}.` }]
+  }
+
+  // ======== AGENDA AVANÇADA
+  if (ctx.integ) {
+    // criar evento: "marca uma reunião amanhã às 14 horas"
+    m = t.match(/^(?:marca|marque|agenda|agende|cria|crie|coloca|coloque|bota|adiciona|adicione)(?: um| uma| o| a)? (.+)$/)
+    const hora = m ? horaDoTexto(t) : null
+    if (m && hora && !/\b(lembrete|alarme|timer)\b/.test(t)) {
+      const d = diaDoTexto(t) ?? 0
+      let titulo = m[1]
+        .replace(/\b(?:pra |para |na |no |nessa |nesta )?(?:hoje|amanha|depois de amanha|(?:proxima |proximo )?(?:segunda|terca|quarta|quinta|sexta|sabado|domingo)(?:-feira)?(?: que vem)?|dia \d{1,2})\b/g, '')
+        .replace(/\b(?:as|a partir das|pras|para as)\s+\d{1,2}(?:\s*(?:horas?|h))?(?:\s*(?:e\s+)?(?:\d{2}|meia)\b)?(?:\s*(?:horas?|minutos?|h))?(?:\s+da\s+(?:manha|tarde|noite))?/g, '')
+        .replace(/\b(na agenda|no calendario|no google agenda|evento|compromisso de)\b/g, '')
+        .replace(/\s+/g, ' ')
+        .trim()
+      titulo = R(titulo || 'compromisso')
+      titulo = titulo[0].toUpperCase() + titulo.slice(1)
+      const ini = new Date()
+      ini.setDate(ini.getDate() + d)
+      ini.setHours(hora.h, hora.min, 0, 0)
+      const fim = ini.getTime() + 3600000
+      const choque = st().eventos.filter((e) => !e.diaTodo && e.inicio < fim && e.fim > ini.getTime())
+      if (!allowOpen) return [{ say: `Para marcar ${titulo}, ${nomeDoDia(d)} às ${hm(ini)}, use o JARVIS no computador.` }]
+      pendente(state, () => {
+        opener(linkGoogleAgenda(titulo, ini.getTime(), fim))
+        org.registrar('agenda', `evento aberto no Google Agenda: ${titulo}, ${ini.toLocaleString('pt-BR')}`)
+        return [{ say: 'Abri o Google Agenda com o evento preenchido. É só clicar em salvar.' }]
+      })
+      return [
+        {
+          say: `${titulo}, ${nomeDoDia(d)} às ${hm(ini)}, por uma hora.${choque.length ? ` Atenção: choca com ${choque.map((e) => e.titulo).join(' e ')}.` : ''} Confirma?`,
+          card: { kind: 'lista', kicker: 'NOVO COMPROMISSO · CONFIRMA?', title: titulo, items: [{ label: `${nomeDoDia(d)} · ${ini.toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' })}`, sub: choque.length ? `choca com: ${choque.map((e) => e.titulo).join(', ')}` : 'horário livre' }] },
+        },
+      ]
+    }
+
+    // horários livres
+    if (/\b(horarios? livres?|horario vago|tenho (um )?(horario|tempo) (livre|vago)|quando (eu )?(estou|to|fico) livre|estou livre|to livre|tenho tempo)\b/.test(t)) {
+      if (!st().temAgenda) return null
+      const d = diaDoTexto(t) ?? 0
+      const livres = horariosLivres(st().eventos, d)
+      if (!livres.length) return [{ say: `${nomeDoDia(d)[0].toUpperCase() + nomeDoDia(d).slice(1)} está sem horários livres entre oito e dezenove horas.` }]
+      return [{ say: `${nomeDoDia(d)[0].toUpperCase() + nomeDoDia(d).slice(1)} você está livre ${livres.slice(0, 4).map(([a, b]) => `das ${hm(a)} às ${hm(b)}`).join(', ')}.` }]
+    }
+
+    // compromisso num dia específico: "tenho algum compromisso na sexta?"
+    const dia = diaDoTexto(t)
+    if (dia !== null && dia > 0 && /\b(compromisso|compromissos|reuniao|reunioes|agenda|evento|eventos|tenho algo|tenho alguma coisa|marcado)\b/.test(t) && !/\b(semana)\b/.test(t)) {
+      if (!st().temAgenda) return null
+      const evs = eventosNoDia(st().eventos, dia)
+      const nome = nomeDoDia(dia)
+      const cf = conflitos(evs)
+      return [{ say: evs.length ? `${nome[0].toUpperCase() + nome.slice(1)} você tem: ${evs.slice(0, 6).map((e) => (e.diaTodo ? `o dia todo, ${e.titulo}` : `às ${hm(e.inicio)}, ${e.titulo}`)).join('; ')}.${cf.length ? ` Atenção: ${cf[0][0].titulo} e ${cf[0][1].titulo} se sobrepõem.` : ''}` : `${nome[0].toUpperCase() + nome.slice(1)} sua agenda está livre.`, abrir: 'agenda' }]
+    }
+
+    // e-mails sobre um assunto
+    m = t.match(/\b(?:e ?mails?|emails?|mensagens?)(?: que (?:recebi|chegaram))? (?:sobre|do|da|de|com o assunto|falando de|a respeito de|referentes? a)(?: o| a| aquele| aquela)? (.{3,})$/)
+    if (m && st().temEmail && !/^(trabalho|pessoal|hoje)$/.test(m[1])) {
+      const q = m[1].replace(/\b(recebidos?|recentes?|ultimos?)\b/g, '').trim()
+      const achados = st().emails
+        .map((e) => ({ e, p: Math.max(parecidoSimples(`${e.assunto} ${e.resumo}`, q) * 1.2, parecidoSimples(`${e.de} ${e.conta}`, q), parecidoSimples(e.trecho, q) * 0.8) }))
+        .filter((x) => x.p >= 0.5)
+        .sort((a, b) => b.p - a.p || b.e.data - a.e.data)
+        .map((x) => x.e)
+      if (!achados.length) return [{ say: `Não achei e-mails recentes sobre ${R(q)}, senhor.` }]
+      return [
+        {
+          say: `${achados.length === 1 ? 'Achei um e-mail' : `Achei ${falarNumero(achados.length)} e-mails`}: ${achados.slice(0, 3).map((e) => `${e.de}, ${e.resumo || e.assunto}`).join('; ')}.`,
+          card: { kind: 'lista', kicker: 'E-MAILS · BUSCA', title: R(q), items: achados.slice(0, 6).map((e) => ({ label: `${e.de} · ${e.assunto}`, sub: e.resumo })) },
+        },
+      ]
+    }
+  }
+  return null
+}
+
+function parecidoSimples(a, b) {
+  const A = clean(a).split(' ').filter((w) => w.length > 2 && !STOP.has(w))
+  const B = clean(b).split(' ').filter((w) => w.length > 2 && !STOP.has(w))
+  if (!A.length || !B.length) return 0
+  let n = 0
+  for (const w of B) {
+    const raiz = w.length > 5 ? w.slice(0, -2) : w
+    if (A.some((x) => x.startsWith(raiz) || raiz.startsWith(x))) n++
+  }
+  return n / B.length
+}
+
+/** Para o digest: tarefas que vencem hoje ou atrasadas, e choques de agenda. */
+export function resumoOrganizacao(org, eventosHoje) {
+  const ts = org ? org.listarTarefas() : []
+  const hoje = fimDoDia(0)
+  const vencendo = ts.filter((x) => x.prazo && x.prazo <= hoje)
+  const cf = conflitos(eventosHoje)
+  return { ts, vencendo, cf }
 }

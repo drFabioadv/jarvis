@@ -1,6 +1,9 @@
 import { useEffect, useState } from 'react'
 import { useInteg, type AgendaCfg, type Config, type Email, type EmailCfg, type Evento } from '../integ'
 import { sendCerebro } from '../lib/brain'
+import { getVozPrefs, setVozPrefs, createSpeaker } from '../lib/tts'
+import { getIntensidade, setIntensidade, type Intensidade } from './WireOrb'
+import { Central, Rotinas } from './Central'
 
 /**
  * Os painéis da Parte 2: AGENDA (todas as agendas numa linha do tempo),
@@ -218,7 +221,7 @@ function Config() {
   const config = useInteg((s) => s.config)
   const salvoAt = useInteg((s) => s.salvoAt)
   const [c, setC] = useState<Config | null>(null)
-  const [aba, setAba] = useState<'agenda' | 'emails' | 'cerebro'>('agenda')
+  const [aba, setAba] = useState<'geral' | 'agenda' | 'emails' | 'cerebro'>('geral')
   useEffect(() => {
     sendCerebro({ type: 'integ-config' })
   }, [])
@@ -248,13 +251,14 @@ function Config() {
   return (
     <div className="sb md" onKeyDown={parar} onKeyUp={parar}>
       <Topo titulo="⚙ CONFIGURAÇÕES" sub="fica só no seu PC">
-        {(['agenda', 'emails', 'cerebro'] as const).map((a) => (
+        {(['geral', 'agenda', 'emails', 'cerebro'] as const).map((a) => (
           <button key={a} className={`md-aba ${aba === a ? 'on' : ''}`} onClick={() => setAba(a)}>
-            {a === 'agenda' ? 'AGENDA' : a === 'emails' ? 'E-MAILS' : 'CÉREBRO'}
+            {a === 'geral' ? 'GERAL' : a === 'agenda' ? 'AGENDA' : a === 'emails' ? 'E-MAILS' : 'CÉREBRO'}
           </button>
         ))}
       </Topo>
       <div className="md-corpo md-cfg">
+        {aba === 'geral' && <Geral />}
         {aba === 'agenda' && (
           <>
             <ol className="md-passos">
@@ -348,8 +352,86 @@ function Config() {
   )
 }
 
+function Geral() {
+  const prefs = useInteg((s) => s.prefs)
+  const msg = useInteg((s) => s.prefsMsg)
+  const [p, setP] = useState<{ nome: string; cidade: string; temas: string } | null>(null)
+  const [voz, setVoz] = useState(getVozPrefs)
+  const [anim, setAnim] = useState<Intensidade>(getIntensidade)
+  useEffect(() => {
+    sendCerebro({ type: 'prefs' })
+  }, [])
+  useEffect(() => {
+    if (prefs) setP({ nome: prefs.nome, cidade: prefs.cidade, temas: prefs.temas.join(', ') })
+  }, [prefs])
+  if (!p) return <div className="md-livre">Carregando…</div>
+  return (
+    <>
+      <div className="md-linha">
+        <label className="md-campo md-flex">
+          Como ele chama você
+          <input value={p.nome} maxLength={40} onChange={(e) => setP({ ...p, nome: e.target.value })} placeholder="senhor" />
+        </label>
+        <label className="md-campo md-flex">
+          Sua cidade (clima)
+          <input value={p.cidade} maxLength={60} onChange={(e) => setP({ ...p, cidade: e.target.value })} />
+        </label>
+      </div>
+      <label className="md-campo">
+        Assuntos do radar de notícias (separados por vírgula)
+        <input value={p.temas} onChange={(e) => setP({ ...p, temas: e.target.value })} />
+      </label>
+      <div className="md-linha">
+        <button
+          className="md-btn md-ok"
+          onClick={() => {
+            useInteg.getState().set({ prefsMsg: 'Salvando…' })
+            sendCerebro({ type: 'prefs-salvar', prefs: { nome: p.nome, cidade: p.cidade, temas: p.temas.split(',').map((x) => x.trim()).filter(Boolean) } })
+          }}
+        >
+          Salvar preferências
+        </button>
+        <span className="md-livre">{msg}</span>
+      </div>
+      <div className="md-linha">
+        <label className="md-campo md-flex">
+          Velocidade da fala: {voz.velocidade.toFixed(2).replace('.', ',')}×
+          <input type="range" min={0.7} max={1.5} step={0.05} value={voz.velocidade} onChange={(e) => { setVozPrefs({ velocidade: Number(e.target.value) }); setVoz(getVozPrefs()) }} />
+        </label>
+        <label className="md-campo md-flex">
+          Volume: {Math.round(voz.volume * 100)}%
+          <input type="range" min={0} max={1} step={0.05} value={voz.volume} onChange={(e) => { setVozPrefs({ volume: Number(e.target.value) }); setVoz(getVozPrefs()) }} />
+        </label>
+        <button
+          className="md-btn"
+          onClick={() => {
+            const spk = createSpeaker()
+            spk.say('Assim fica a minha voz, senhor.')
+            void spk.end()
+          }}
+        >
+          Testar
+        </button>
+      </div>
+      <label className="md-campo">
+        Intensidade das animações
+        <select value={anim} onChange={(e) => { setIntensidade(e.target.value as Intensidade); setAnim(e.target.value as Intensidade) }}>
+          <option value="baixa">Baixa — mais leve para o PC</option>
+          <option value="media">Média</option>
+          <option value="alta">Alta — máximo de detalhe</option>
+        </select>
+      </label>
+      <div className="md-aviso">
+        Palavra de ativação: <b>“Jarvis”</b> ou <b>“amigão”</b>. A voz troca com a tecla <b>V</b>. O <b>modo ação</b> (abrir programas, mexer em arquivos pelo Claude) liga e desliga no ícone do JARVIS, ao lado do relógio. Ações que apagam, enviam ou criam algo sempre pedem confirmação.
+      </div>
+    </>
+  )
+}
+
 export function Modulos() {
   const painel = useInteg((s) => s.painel)
+  if (painel === 'central') return <Central />
+  if (painel === 'rotinas') return <Rotinas />
   if (painel === 'agenda') return <Agenda />
   if (painel === 'emails') return <Emails />
   if (painel === 'config') return <Config />

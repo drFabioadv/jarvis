@@ -206,9 +206,22 @@ function dispatch(ws: WebSocket) {
     } else if (msg.type === 'integ-config') {
       const m = msg as { config?: Config; salvo?: boolean }
       useInteg.getState().set({ config: m.config ?? null, ...(m.salvo ? { salvoAt: Date.now() } : {}) })
+    } else if (msg.type === 'org') {
+      const { type: _o, ...rest } = msg as Record<string, unknown>
+      void _o
+      useInteg.getState().set(rest as Parameters<ReturnType<typeof useInteg.getState>['set']>[0])
+    } else if (msg.type === 'org-erro') {
+      useInteg.getState().set({ orgErro: String((msg as { erro?: string }).erro ?? '') })
+    } else if (msg.type === 'diagnostico') {
+      const { type: _d, ...rest } = msg as Record<string, unknown>
+      void _d
+      useInteg.getState().set({ diag: rest as Record<string, string | number | boolean> })
+    } else if (msg.type === 'prefs') {
+      const m = msg as { prefs?: { nome: string; cidade: string; temas: string[] }; salvo?: boolean; erro?: string }
+      useInteg.getState().set({ prefs: m.prefs ?? null, prefsMsg: m.erro ? m.erro : m.salvo ? 'Preferências salvas.' : '' })
     } else if (msg.type === 'abrir') {
       const p = (msg as { painel?: string }).painel
-      if (p === 'agenda' || p === 'emails' || p === 'config' || p === 'cerebro') abrirPainel(p)
+      if (p === 'agenda' || p === 'emails' || p === 'config' || p === 'cerebro' || p === 'central' || p === 'rotinas') abrirPainel(p)
     } else if (msg.type === 'digest-auto') {
       useInteg.getState().digest?.()
     } else if (msg.type === 'cerebro') {

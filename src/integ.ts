@@ -11,7 +11,17 @@ export type Erro = { nome: string; erro: string }
 export type AgendaCfg = { id: string; nome: string; cor: string; url: string; salvo?: boolean; apagarUrl?: boolean }
 export type EmailCfg = { id: string; apelido: string; cor: string; usuario: string; senhaApp: string; host: string; salvo?: boolean; apagarSenha?: boolean }
 export type Config = { agendas: AgendaCfg[]; emails: EmailCfg[]; modelo: string; digestAuto: boolean; modelos: Record<string, string> }
-export type Painel = 'agenda' | 'emails' | 'config' | null
+export type Painel = 'agenda' | 'emails' | 'config' | 'central' | 'rotinas' | null
+export type Tarefa = { id: string; texto: string; prazo: number | null; prioridade: 'normal' | 'alta'; feita: boolean; criada: number; concluida?: number }
+export type Rotina = {
+  id: string; nome: string; descricao: string; comando: string
+  frequencia: 'diaria' | 'dias-uteis' | 'semanal' | 'intervalo'; horario: string; dias: number[]; intervaloMin: number
+  condicao: 'sempre' | 'tem-compromisso' | 'tem-email-acao' | 'tem-tarefa'; falar: boolean; ativa: boolean
+  historico: { at: number; ok: boolean; resumo: string; motivo: string }[]; ultima: number
+}
+export type Atividade = { at: number; tipo: string; texto: string }
+export type Diag = Record<string, string | number | boolean>
+export type Prefs = { nome: string; cidade: string; temas: string[] }
 
 type S = {
   eventos: Evento[]
@@ -27,6 +37,14 @@ type S = {
   config: Config | null
   salvoAt: number
   painel: Painel
+  tarefas: Tarefa[]
+  rotinas: Rotina[]
+  historico: Atividade[]
+  lembretes: { quando: number; texto: string }[]
+  diag: Diag | null
+  prefs: Prefs | null
+  prefsMsg: string
+  orgErro: string
   /** Dispara o morning digest (registrado pelo App). */
   digest: (() => void) | null
   set: (p: Partial<S>) => void
@@ -46,6 +64,14 @@ export const useInteg = create<S>((set) => ({
   config: null,
   salvoAt: 0,
   painel: null,
+  tarefas: [],
+  rotinas: [],
+  historico: [],
+  lembretes: [],
+  diag: null,
+  prefs: null,
+  prefsMsg: '',
+  orgErro: '',
   digest: null,
   set: (p) => set(p),
 }))

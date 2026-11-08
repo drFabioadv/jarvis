@@ -480,7 +480,7 @@ function extrairTexto(corpo, tipo, cte) {
 function limparTrecho(t) {
   return t
     .replace(/https?:\/\/\S+/g, '')
-    .replace(/[​-‏͏­]/g, '')
+    .replace(/[\u200b-\u200f\u00ad]|\u034f/g, '')
     .replace(/\s+/g, ' ')
     .trim()
     .slice(0, 500)
@@ -696,6 +696,7 @@ export function iniciarIntegracoes(projectRoot, opts = {}) {
   root = projectRoot
   perguntar = opts.perguntar ?? null
   avisar = opts.avisar ?? (() => {})
+  if (opts.semRelogio) return
   primeiraCarga = Promise.allSettled([atualizarAgenda(), atualizarEmails()])
   setInterval(() => void atualizarAgenda().catch(() => {}), 10 * 60 * 1000)
   const min = Math.max(5, +lerConfig().intervaloEmailsMin || 15)

@@ -108,6 +108,26 @@ let speakingAt = 0
 
 /** When the current sentence started, or 0 if nothing is being spoken. The
  *  voice loop uses this to refuse to interrupt him in his own first syllable. */
+/** Velocidade (0,7–1,5) e volume (0–1) da fala, das configurações (⚙). */
+const vozPrefs = (() => {
+  try {
+    const p = JSON.parse(localStorage.getItem('jarvis-voz') ?? '{}')
+    return { velocidade: Number(p.velocidade) || 1, volume: p.volume == null ? 1 : Number(p.volume) }
+  } catch {
+    return { velocidade: 1, volume: 1 }
+  }
+})()
+export function getVozPrefs() {
+  return { ...vozPrefs }
+}
+export function setVozPrefs(p: { velocidade?: number; volume?: number }) {
+  if (p.velocidade != null) vozPrefs.velocidade = Math.min(1.5, Math.max(0.7, p.velocidade))
+  if (p.volume != null) vozPrefs.volume = Math.min(1, Math.max(0, p.volume))
+  try {
+    localStorage.setItem('jarvis-voz', JSON.stringify(vozPrefs))
+  } catch {}
+}
+
 export function speakingSince(): number {
   return speaking ? speakingAt : 0
 }
@@ -487,7 +507,8 @@ export function createSpeaker(): Speaker {
       // change with stakes, and that steadiness is most of the effect. This
       // lands around 130 wpm, below the median for film dialogue.
       // Vozes neurais soam mais humanas quase na velocidade normal.
-      u.rate = /natural|online/i.test(voice?.name ?? '') ? 1.04 : 1.1
+      u.rate = (/natural|online/i.test(voice?.name ?? '') ? 1.04 : 1.1) * vozPrefs.velocidade
+      u.volume = vozPrefs.volume
       // Mid-baritone, and *not* pushed lower for gravitas. The voice is
       // clarity-weighted rather than chest-weighted; dropping it further reads
       // as a film-trailer voiceover, which is the wrong character entirely.
@@ -594,6 +615,9 @@ export function createSpeaker(): Speaker {
   const playUrl = (url: string, text: string) =>
     new Promise<void>((resolve) => {
       const audio = new Audio(url)
+      audio.volume = vozPrefs.volume
+      audio.playbackRate = vozPrefs.velocidade
+      audio.preservesPitch = true
       currentAudio = audio
       // The generated path is an engine speaking just as much as the OS voice
       // is, so it keeps the same books. `spoken` counts the hand-off, `started`

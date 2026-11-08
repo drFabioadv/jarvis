@@ -198,6 +198,7 @@ export function VideoHud() {
     requestPainel()
     sendCerebro({ type: 'cerebro' })
     sendCerebro({ type: 'integ' })
+    sendCerebro({ type: 'org' })
     // O bom dia automático: o cérebro decide se é a primeira vez hoje, de manhã.
     setTimeout(() => sendCerebro({ type: 'digest-auto' }), 1500)
     const id = setInterval(requestPainel, 30 * 60 * 1000)
@@ -256,6 +257,14 @@ export function VideoHud() {
           <i>Cérebro</i>
         </button>
         <button
+          className={`vh-rail-btn ${painel === 'central' ? 'on' : ''}`}
+          title="Central de comando"
+          onClick={() => (painel === 'central' ? abrirPainel(null) : abrirPainel('central'))}
+        >
+          <span>◎</span>
+          <i>Central</i>
+        </button>
+        <button
           className={`vh-rail-btn ${painel === 'agenda' ? 'on' : ''}`}
           title={proxEv ? `Próximo: ${proxEv.titulo} às ${new Date(proxEv.inicio).toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' })}` : 'Agenda'}
           onClick={() => (painel === 'agenda' ? abrirPainel(null) : abrirPainel('agenda'))}
@@ -271,6 +280,14 @@ export function VideoHud() {
           <span>✉</span>
           <i>E-mails</i>
           {acao > 0 && <b className="vh-badge-acao">{acao}</b>}
+        </button>
+        <button
+          className={`vh-rail-btn ${painel === 'rotinas' ? 'on' : ''}`}
+          title="Rotinas (automações)"
+          onClick={() => (painel === 'rotinas' ? abrirPainel(null) : abrirPainel('rotinas'))}
+        >
+          <span>⟳</span>
+          <i>Rotinas</i>
         </button>
         <button
           className={`vh-rail-btn ${painel === 'config' ? 'on' : ''}`}
