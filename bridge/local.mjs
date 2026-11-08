@@ -244,6 +244,97 @@ const PROGRAMAS = {
   capcut: ['protocol', 'capcut:'],
 }
 
+// ---- programas instalados: atalhos da Área de Trabalho e do Menu Iniciar ----
+
+/** Apelidos: o que você fala → nomes de atalho que podem existir. */
+const APELIDOS = {
+  lol: ['league of legends', 'riot client'],
+  'league of legends': ['league of legends', 'riot client'],
+  liga: ['league of legends'],
+  valorant: ['valorant', 'riot client'],
+  riot: ['riot client'],
+  fortnite: ['fortnite', 'epic games'],
+  epic: ['epic games'],
+  'epic games': ['epic games'],
+  minecraft: ['minecraft'],
+  roblox: ['roblox player', 'roblox'],
+  discord: ['discord'],
+  steam: ['steam'],
+  capcut: ['capcut'],
+  'virtual dj': ['virtualdj', 'virtual dj'],
+  virtualdj: ['virtualdj'],
+  whatsapp: ['whatsapp'],
+  'msi afterburner': ['msi afterburner'],
+  afterburner: ['msi afterburner'],
+  chrome: ['google chrome'],
+  edge: ['microsoft edge'],
+  word: ['word'],
+  excel: ['excel'],
+  powerpoint: ['powerpoint'],
+  obs: ['obs studio'],
+  spotify: ['spotify'],
+  teams: ['microsoft teams', 'teams'],
+  zoom: ['zoom'],
+}
+
+let atalhosCache = { at: 0, list: [] }
+
+async function listarAtalhos() {
+  if (Date.now() - atalhosCache.at < 5 * 60 * 1000 && atalhosCache.list.length) return atalhosCache.list
+  const h = homedir()
+  const pastas = [
+    join(h, 'Desktop'),
+    join(h, 'OneDrive', 'Desktop'),
+    join(h, 'OneDrive', 'Área de Trabalho'),
+    join(process.env.PUBLIC || 'C:\\Users\\Public', 'Desktop'),
+    join(process.env.APPDATA || join(h, 'AppData', 'Roaming'), 'Microsoft', 'Windows', 'Start Menu', 'Programs'),
+    join(process.env.ProgramData || 'C:\\ProgramData', 'Microsoft', 'Windows', 'Start Menu', 'Programs'),
+  ]
+  const list = []
+  const walk = async (dir, depth) => {
+    let entries
+    try {
+      entries = await readdir(dir, { withFileTypes: true })
+    } catch {
+      return
+    }
+    for (const e of entries) {
+      const full = join(dir, e.name)
+      if (e.isDirectory()) {
+        if (depth < 3) await walk(full, depth + 1)
+      } else if (/\.(lnk|url|appref-ms)$/i.test(e.name)) {
+        const nome = e.name.replace(/\.(lnk|url|appref-ms)$/i, '')
+        if (/desinstalar|uninstall|remover|readme|leia-me|help|ajuda|site|website/i.test(nome)) continue
+        list.push({ nome, n: norm(nome), path: full })
+      }
+    }
+  }
+  for (const p of pastas) if (existsSync(p)) await walk(p, 0)
+  atalhosCache = { at: Date.now(), list }
+  return list
+}
+
+/** O atalho que melhor combina com o que foi pedido, ou null. */
+async function acharPrograma(pedido) {
+  const q = norm(pedido)
+  if (!q) return null
+  const alvos = APELIDOS[q] ?? [q]
+  const list = await listarAtalhos()
+  let melhor = null
+  for (const alvo of alvos) {
+    const words = norm(alvo).split(' ').filter(Boolean)
+    for (const a of list) {
+      let score = 0
+      if (a.n === norm(alvo)) score = 100
+      else if (a.n.startsWith(norm(alvo))) score = 80
+      else if (words.every((w) => a.n.includes(w))) score = 60 - a.n.length / 10
+      if (score && (!melhor || score > melhor.score)) melhor = { ...a, score }
+    }
+    if (melhor && melhor.score >= 60) break
+  }
+  return melhor
+}
+
 function userFolders() {
   const h = homedir()
   return {
@@ -277,6 +368,24 @@ async function geocode(city) {
   const r = j.results?.[0]
   if (!r) return null
   return { nome: r.name, lat: r.latitude, lon: r.longitude, uf: r.admin1 ?? '' }
+}
+
+/**
+ * A cidade de um pedido de clima: a última "em/de/no/na X" da frase.
+ * "coloca em tela o clima daqui de Belém do Pará" → "belem".
+ * Sem cidade, "daqui" ou "aqui" → a cidade padrão (string vazia).
+ */
+function cidadeDoPedido(t) {
+  const limpo = t
+    .replace(/\b(do|de) (para|pa)$/, '')
+    .replace(/\b(hoje|amanha|agora|neste momento|por favor|pra mim|para mim|na tela|em tela)\b/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim()
+  const m = /.*\b(?:em|de|no|na|para|pra|da|do)\s+([a-z][a-z ]{2,30})$/.exec(limpo)
+  let c = (m?.[1] ?? '').trim()
+  c = c.replace(/^(cidade|cidade de|municipio de)\s+/, '').trim()
+  if (!c || /\b(clima|tempo|temperatura|previsao|aqui|daqui|minha cidade|casa|mim|tela)\b/.test(c)) return ''
+  return c
 }
 
 async function weather(cfg, city) {
@@ -588,8 +697,8 @@ export async function handleLocal(raw, ctx) {
 
   // ---- clima
   if (/\b(clima|tempo|temperatura|previsao|vai chover|chuva|calor|frio)\b/.test(t) && !/\b(quanto tempo|tempo de|tempo para|tempo que)\b/.test(t)) {
-    const city = /\b(?:em|de|no|na|para|pra)\s+([a-z ]{3,40})$/.exec(t)?.[1]?.replace(/^(hoje|amanha|agora)$/, '').trim()
-    const w = await weather(cfg, city && !/^(hoje|amanha|agora|o dia)$/.test(city) ? city : '')
+    const city = cidadeDoPedido(t)
+    const w = await weather(cfg, city)
     if (!w) return [{ say: `Não encontrei a cidade ${city}, senhor.` }]
     return [{ say: weatherSpeech(w), card: weatherCard(w) }]
   }
@@ -662,7 +771,7 @@ export async function handleLocal(raw, ctx) {
   }
 
   // ---- abrir site, programa ou pasta conhecida
-  const open = /^(?:abre|abra|abrir|abri|inicia|inicie|liga|entra no|entra na|vai no|vai na|acessa|acesse)\s+(?:o |a |os |as |meu |minha |o meu |a minha |site do |site da |o site do |o site da |o site |site )?(.+)$/.exec(t)
+  const open = /^(?:(?:me |pra mim |para mim )?(?:abre|abra|abrir|abri|inicia|inicie|liga|executa|execute|roda|rode|entra no|entra na|vai no|vai na|acessa|acesse|joga|jogar|quero jogar|vamos jogar|bora jogar|abre pra mim|abre para mim))\s+(?:o |a |os |as |meu |minha |o meu |a minha |site do |site da |o site do |o site da |o site |site )?(.+)$/.exec(t)
   if (open && allowOpen) {
     const what = open[1].replace(/^(pasta|programa|aplicativo|app|site) (de |do |da )?/, '').trim()
     if (SITES[what]) {
@@ -679,6 +788,12 @@ export async function handleLocal(raw, ctx) {
     if (folder) {
       opener(folder)
       return [{ say: `Abrindo a pasta ${what}.` }]
+    }
+    // Programa instalado: procura o atalho na Área de Trabalho e no Menu Iniciar.
+    const prog2 = await acharPrograma(what.replace(/^(o |a |jogo |o jogo |programa |aplicativo |app )/, ''))
+    if (prog2) {
+      opener(prog2.path)
+      return [{ say: `Abrindo ${prog2.nome}.` }]
     }
     if (/^[a-z0-9-]+( ?\. ?| ponto )(com|br|net|org|gov|jus|app|io)( ?\. ?| ponto )?(br)?$/.test(what)) {
       const host = what.replace(/ ponto /g, '.').replace(/\s/g, '')

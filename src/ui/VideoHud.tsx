@@ -7,6 +7,7 @@ import { Blades } from './Blades'
 import { Effects } from './Effects'
 import { Pointer } from './Pointer'
 import { WireOrb } from './WireOrb'
+import { currentVoiceName } from '../lib/tts'
 
 /**
  * O layout do vídeo: grade azul, a esfera de fios no centro, o status no topo,
@@ -202,7 +203,7 @@ export function VideoHud() {
       {line && <div className="vh-caption">{line}</div>}
       {error && <div className="vh-error">{error}</div>}
       <div className="vh-foot">
-        diga <b>“ei jarvis”</b> · <kbd>Espaço</kbd> para falar · <kbd>D</kbd> diagnóstico
+        diga <b>“ei jarvis”</b> · <kbd>Espaço</kbd> para falar · <kbd>V</kbd> voz: {currentVoiceName().replace(/^Microsoft\s+/, '').replace(/\s*-.*$/, '')} · <kbd>D</kbd> diagnóstico
       </div>
 
       <Blades />

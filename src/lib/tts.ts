@@ -185,6 +185,9 @@ function score(v: SpeechSynthesisVoice): number {
   // Vozes masculinas em português (Windows, Edge, macOS) — mais perto do
   // personagem. "Antonio Online (Natural)" do Edge é a melhor de todas.
   if (/\b(antonio|daniel|donato|fabio|humberto|julio|nicolau|valerio|thiago|felipe|luciano|duarte|cristiano)\b/.test(n)) s += 80
+  // As vozes "Multilingual" neurais do Edge são as mais humanas de todas.
+  if (/\bmacerio\b/.test(n)) s += 120
+  if (n.includes('multilingual')) s += 25
 
   // Variantes de alta qualidade (vozes neurais do Edge, Premium/Enhanced do Mac).
   if (n.includes('natural') || n.includes('online')) s += 30
@@ -483,11 +486,12 @@ export function createSpeaker(): Speaker {
       // Deliberate, and deliberately invariant — the character's pace does not
       // change with stakes, and that steadiness is most of the effect. This
       // lands around 130 wpm, below the median for film dialogue.
-      u.rate = 1.12
+      // Vozes neurais soam mais humanas quase na velocidade normal.
+      u.rate = /natural|online/i.test(voice?.name ?? '') ? 1.04 : 1.1
       // Mid-baritone, and *not* pushed lower for gravitas. The voice is
       // clarity-weighted rather than chest-weighted; dropping it further reads
       // as a film-trailer voiceover, which is the wrong character entirely.
-      u.pitch = 0.92
+      u.pitch = /natural|online/i.test(voice?.name ?? '') ? 1 : 0.95
 
       // speechSynthesis exposes no amplitude, so drive the reactor from a
       // synthetic envelope. It only has to look like speech, not match it.

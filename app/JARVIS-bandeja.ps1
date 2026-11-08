@@ -366,6 +366,7 @@ $menu.Items.Add($miInicio) | Out-Null
 $menu.Items.Add('-') | Out-Null
 $miReiniciar = $menu.Items.Add('Reiniciar JARVIS')
 $miAtualizar = $menu.Items.Add('Procurar atualizacao agora')
+$miVoz       = $menu.Items.Add('Voz natural (ElevenLabs)...')
 $miIphone    = $menu.Items.Add('Atalho do iPhone (senha)')
 $miConfig    = $menu.Items.Add('Preferencias (cidade, temas, modelo)')
 $miLogs      = $menu.Items.Add('Abrir registros (para suporte)')
@@ -380,6 +381,19 @@ $miInicio.add_Click({ try { Definir-IniciarComWindows $miInicio.Checked } catch 
 $miAtualizar.add_Click({
   $script:upManual = $true
   $script:proximaChecagem = Get-Date
+})
+$miVoz.add_Click({
+  $arq = Join-Path $Root 'elevenlabs.txt'
+  if (-not (Test-Path $arq)) { New-Item -ItemType File -Path $arq -Force | Out-Null }
+  [System.Windows.Forms.MessageBox]::Show(
+    "Para uma voz bem natural, como uma pessoa falando:`n`n" +
+    "1. Crie uma conta gratis em elevenlabs.io`n" +
+    "2. Clique no seu perfil > API Keys > Create, e copie a chave`n" +
+    "3. Cole a chave na primeira linha do Bloco de Notas que vai abrir e salve (Ctrl+S)`n" +
+    "4. Clique no icone do JARVIS > Reiniciar JARVIS`n`n" +
+    "Opcional: para escolher a voz, copie o ID de uma voz da Voice Library e cole em elevenlabs-voz.txt.",
+    'J.A.R.V.I.S. - voz natural') | Out-Null
+  Start-Process notepad.exe $arq
 })
 $miIphone.add_Click({ Start-Process notepad.exe (Join-Path $Root 'atalho-token.txt') })
 $miConfig.add_Click({ Start-Process notepad.exe (Join-Path $Root 'jarvis-config.json') })

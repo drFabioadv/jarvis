@@ -123,7 +123,7 @@ function afterWake(text: string): string {
  * last word of a real request.
  */
 const CONTINUES =
-  /^(?:e|ou|mas|porém|porque|pois|que|se|quando|enquanto|onde|qual|quais|quem|cujo|cuja|para|pra|pro|de|do|da|dos|das|em|no|na|nos|nas|num|numa|por|pelo|pela|pelos|pelas|com|sem|sobre|entre|até|desde|ao|aos|à|às|o|a|os|as|um|uma|uns|umas|meu|minha|meus|minhas|seu|sua|seus|suas|nosso|nossa|é|são|era|foi|ser|estar|está|estão|tem|têm|ter|pode|posso|podia|poderia|vai|vou|quero|queria|gostaria|como|tipo|mais|menos|muito|bem|só|algum|alguma|todo|toda|todos|todas|tanto|então|and|or|but|the|of|to)$/iu
+  /^(?:e|ou|mas|porém|porque|pois|que|se|quando|enquanto|onde|qual|quais|quem|cujo|cuja|para|pra|pro|de|do|da|dos|das|em|no|na|nos|nas|num|numa|por|pelo|pela|pelos|pelas|com|sem|sobre|entre|até|desde|ao|aos|à|às|o|a|os|as|um|uma|uns|umas|meu|minha|meus|minhas|seu|sua|seus|suas|nosso|nossa|é|são|era|foi|ser|estar|está|estão|tem|têm|ter|pode|posso|podia|poderia|vai|vou|quero|queria|gostaria|como|tipo|mais|menos|muito|bem|só|algum|alguma|todo|toda|todos|todas|tanto|então|aí|ai|né|hum|ahn|eh|seguinte|assim|and|or|but|the|of|to)$/iu
 
 /** Trailing punctuation a transcriber emits mid-thought. */
 const TRAILS = /[,;:–—-]$/
@@ -152,9 +152,10 @@ const SELF_GUARD_MS = 350
  * more clause. Making it generous here is what would make every ordinary
  * question feel slow.
  */
-const SETTLE_MS = 250
+// Pausa curta no meio da frase ('então, é...') não é fim de pedido.
+const SETTLE_MS = 1100
 /** ...and this long when the sentence is plainly unfinished. */
-const CONTINUE_MS = 1600
+const CONTINUE_MS = 2400
 /**
  * Nothing is held longer than this in total. A ceiling rather than a timer:
  * without it, someone who ends every clause on "and" could hold a turn open

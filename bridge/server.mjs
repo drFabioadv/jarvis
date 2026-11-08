@@ -521,6 +521,12 @@ const PROMPT_PC = `This computer (Windows) — when the user asks you to DO some
   so it starts playing by itself. Prefer playing over listing.
 - Same for other sites: Google https://www.google.com/search?q=..., WhatsApp
   Web https://web.whatsapp.com, Maps https://www.google.com/maps/search/...
+- Installed programs and games (LoL, Valorant, Steam, Discord...): find the
+  shortcut with Glob in the Desktop and Start Menu folders
+  (%APPDATA%\\Microsoft\\Windows\\Start Menu\\Programs\\**\\*.lnk,
+  C:\\ProgramData\\Microsoft\\Windows\\Start Menu\\Programs\\**\\*.lnk,
+  the user's Desktop and C:\\Users\\Public\\Desktop) and open it with
+  explorer.exe "<path>.lnk". You have permission; just do it.
 - Apps and folders: explorer.exe "C:\\Users\\...\\pasta" opens a folder;
   explorer.exe "<file>" opens a file with its default program;
   explorer.exe calculator: ; explorer.exe ms-settings: ; notepad.exe.
