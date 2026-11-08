@@ -103,7 +103,7 @@ export const norm = (s) =>
 /** Tira o vocativo e as cortesias do começo e do fim. */
 function clean(text) {
   return norm(text)
-    .replace(/^(ei |oi |ola |fala |e ai )?(jarvis|jarves|jarbas|javis)\b ?/, '')
+    .replace(/^(ei |oi |ola |fala |e ai )?(jarvis|jarves|jarbas|javis|javi|jaaves|jav|ja vis[eiou]?|djarvis|jervis|travis)\b ?/, '')
     .replace(/^(por favor|pfv|pf) /, '')
     .replace(/ (por favor|pfv|pf|jarvis)$/, '')
     .trim()

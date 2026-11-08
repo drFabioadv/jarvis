@@ -67,7 +67,8 @@ const newId = () =>
 
 /** The same mishearings voice.ts accepts for the wake word — otherwise a turn
  *  that woke him as "travis" gets that word sent on to the model as a question. */
-const NAME = '(?:jarvis|járvis|jarvys|jervis|jarves|jarvas|jarviz|djarvis|javis|jarbas|travis|jarviss|jarv)'
+// Como o Whisper costuma escrever "Jarvis": javis, jáaves, jav, já viso, já visi...
+const NAME = String.raw`(?:d?j[aáàâãe][aáâã]?r?[vb][iíeé]?[sz]?[eéioóu]?|j[aáàâã][\s,.-]+v[iíeé]s[eéioóu]?|jarbas|jervis|travis)`
 /** Os jeitos de chamar: "Ei Jarvis", "Oi Jarvis", "Fala Jarvis"... */
 const PREFIX = '(?:(?:ei|eii|hey|hei|oi|olá|ola|ok|okay|fala|e aí|e ai)[\\s,]+)?'
 /** A bare vocative — "Jarvis", "ei jarvis" — with nothing asked. */
@@ -149,7 +150,9 @@ export default function App() {
     // pedido só, em vez de responder só à segunda metade.
     const prev = lastAsk.current
     const said =
-      prev && !prev.answered && Date.now() - prev.at < 12000 ? `${prev.text} ${heard}` : heard
+      prev && !prev.answered && Date.now() - prev.at < 6000 && prev.text.split(' ').length <= 8
+        ? `${prev.text} ${heard}`
+        : heard
     lastAsk.current = { text: said, at: Date.now(), answered: false }
     const mine = ++turn.current
     const stale = () => mine !== turn.current

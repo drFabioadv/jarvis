@@ -794,7 +794,7 @@ iniciarIndice(PROJECT_ROOT)
 // Audição local (Whisper no PC): ouve mesmo com a janela escondida ou num jogo.
 const AUDICAO_CFG = loadConfig(PROJECT_ROOT)
 const LOCAL_STT = !elevenKey() && (AUDICAO_CFG.audicao ?? 'local') === 'local' && process.env.JARVIS_LOCAL_STT !== '0'
-const LOCAL_STT_MODEL = AUDICAO_CFG.modeloVoz || 'onnx-community/whisper-base'
+const LOCAL_STT_MODEL = AUDICAO_CFG.modeloVoz || 'onnx-community/whisper-small'
 if (LOCAL_STT) void loadLocalStt(LOCAL_STT_MODEL)
 
 /** Última fase informada pela interface — ver a rota /phase. */

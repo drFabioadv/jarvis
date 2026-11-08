@@ -2594,3 +2594,8 @@ body::before {
 .vh-panel .vh-card-clima {
   grid-column: span 2;
 }
+
+/* Fundo totalmente preto: sem a grade quadriculada, só as linhas da esfera. */
+.vh-grid {
+  display: none;
+}
