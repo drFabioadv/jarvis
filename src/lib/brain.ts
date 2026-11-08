@@ -57,6 +57,11 @@ export function watchAvisos(fn: (text: string) => void): void {
   if (usingBridge) bridge.watchAvisos(fn)
 }
 
+/** Segundo cérebro (só pela bridge). */
+export function sendCerebro(msg: Record<string, unknown>): void {
+  if (usingBridge) bridge.sendCerebro(msg)
+}
+
 /** Pede o painel inicial (clima e notícias) ao cérebro local. */
 export function requestPainel(): void {
   if (usingBridge) bridge.requestPainel()

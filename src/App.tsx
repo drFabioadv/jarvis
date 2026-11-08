@@ -6,6 +6,7 @@ import { Ignition } from './ui/Ignition'
 import { Diagnostics } from './ui/Diagnostics'
 import { VoiceRing } from './ui/VoiceRing'
 import { VideoHud } from './ui/VideoHud'
+import { useCerebro } from './cerebro'
 import { useCards } from './cards'
 import { useStore } from './store'
 import { startVoice, type Voice, type VoiceMode } from './lib/voice'
@@ -342,9 +343,21 @@ export default function App() {
       store.getState().setPhase('speaking')
       return
     }
+    // O segundo cérebro, por voz.
+    const cb = semNome.match(/^(abre|abrir|mostra|mostrar|exibe|ver|fecha|fechar|esconde|esconder|minimiza)( o| meu| o meu)? (segundo )?cerebro$/)
+    if (cb) {
+      const abrir = !/^(fecha|fechar|esconde|esconder|minimiza)/.test(cb[1])
+      useCerebro.getState().abrir(abrir)
+      const spk = createSpeaker()
+      speaker.current = spk
+      spk.say(abrir ? 'Seu segundo cérebro, senhor.' : 'Fechado.')
+      void spk.end().then(() => store.getState().setPhase('dormant'))
+      return
+    }
     // O painel de informações, por voz.
     if (/^(minimiza|minimizar|esconde|esconder|fecha|fechar|tira|recolhe|recolher)( tudo| todas| todos| as janelas| as informacoes| o painel| os cartoes| as noticias| isso)+$/.test(semNome)) {
       useCards.getState().minimizeAll()
+      useCerebro.getState().abrir(false)
       const spk = createSpeaker()
       speaker.current = spk
       spk.say('Minimizado.')
@@ -573,7 +586,7 @@ export default function App() {
     // status bar, rings, suit schematic, reactor power-up — before the live
     // interface takes over. Kept a touch under the boot cue so the music is
     // still rising as the reactor lands.
-    await new Promise((r) => setTimeout(r, APP_MODE ? 2500 : 9200)) // boot sequence
+    await new Promise((r) => setTimeout(r, APP_MODE || !LAYOUT_CLASSICO ? 2300 : 9200)) // boot sequence
     await warming
     store.getState().setConnected(connectedLabels())
 
@@ -609,6 +622,15 @@ export default function App() {
     })
 
     store.getState().setPhase('dormant')
+    // Ligado no clique: ele saúda. (Na bandeja, ao iniciar o Windows, liga calado.)
+    if (!APP_MODE) {
+      const hi = createSpeaker()
+      speaker.current = hi
+      hi.say('Sistemas online. Estou ouvindo, senhor.')
+      void hi.end().then(() => {
+        if (store.getState().phase === 'speaking') store.getState().setPhase('dormant')
+      })
+    }
   }
 
   // -- modo app: liga sozinho e informa a fase à bandeja ----------------------
@@ -824,7 +846,7 @@ export default function App() {
       ) : (
         <VideoHud />
       )}
-      <Boot />
+      {LAYOUT_CLASSICO && <Boot />}
       <Diagnostics />
       <Ignition onStart={() => void powerOn()} />
     </>

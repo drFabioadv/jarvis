@@ -48,7 +48,14 @@ const SPEED: Record<Phase, number> = {
  * esquerdo, menor (com cartões abertos). Ela desliza até lá suavemente.
  */
 const layout = { x: 0.5, y: 0.47, scale: 1 }
-export function setOrbLayout(open: boolean) {
+export function setOrbLayout(open: boolean | 'cerebro') {
+  if (open === 'cerebro') {
+    // Segundo cérebro aberto: a esfera fica em cima, no centro, menor.
+    layout.x = 0.5
+    layout.y = 0.17
+    layout.scale = 0.42
+    return
+  }
   layout.x = open ? 0.19 : 0.5
   layout.y = open ? 0.32 : 0.47
   layout.scale = open ? 0.6 : 1

@@ -61,7 +61,8 @@ export async function ollamaChat({ model, text, history, cfg, onDelta, signal })
     'Chame-o de "senhor" às vezes. ' +
     'Escreva números e horas por extenso. Se não souber algo ou se for algo que muda com o tempo, ' +
     'diga que precisa consultar a internet. ' +
-    `Agora são ${now.toLocaleString('pt-BR')} e ele está em ${cfg.cidade}.`
+    `Agora são ${now.toLocaleString('pt-BR')} e ele está em ${cfg.cidade}.` +
+    (cfg.cerebro ?? '')
   const res = await fetch(`${BASE}/api/chat`, {
     method: 'POST',
     headers: { 'content-type': 'application/json' },

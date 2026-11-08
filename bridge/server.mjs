@@ -19,6 +19,7 @@ import { WebSocketServer } from 'ws'
 import { handleLocal, loadConfig, painelInicial } from './local.mjs'
 import { ollamaChat, ollamaReady, needsClaude } from './ollama.mjs'
 import { iniciarIndice, indiceAtual } from './indice.mjs'
+import { iniciarCerebro, cerebro, cerebroPrompt, salvarNota, excluirNota, extrairSaves, filtroSave } from './cerebro.mjs'
 import { loadLocalStt, transcribeLocal } from './stt-local.mjs'
 import { timingSafeEqual } from 'node:crypto'
 import { fileURLToPath } from 'node:url'
@@ -790,6 +791,7 @@ const PROJECT_ROOT = fileURLToPath(new URL('..', import.meta.url))
 
 // O índice do computador (apps, atalhos, pastas pessoais), renovado a cada 30 min.
 iniciarIndice(PROJECT_ROOT)
+iniciarCerebro(PROJECT_ROOT)
 
 // Audição local (Whisper no PC): ouve mesmo com a janela escondida ou num jogo.
 const AUDICAO_CFG = loadConfig(PROJECT_ROOT)
@@ -805,6 +807,19 @@ const uiPhase = { phase: '', at: 0, wakes: 0, aviso: '', avisoSeq: 0 }
 // fala em todas as janelas abertas e a bandeja mostra um aviso.
 const LEMBRETES_FILE = join(PROJECT_ROOT, 'lembretes.json')
 const clientes = new Set()
+/** Avisa todas as telas que o segundo cérebro mudou (flash = nota que pisca). */
+function avisarCerebro(flash) {
+  const msg = { type: 'cerebro', ...cerebro(), flash: flash ?? null }
+  for (const c of clientes) {
+    try {
+      c(msg)
+    } catch {}
+  }
+}
+const aoSalvar = (n) => {
+  console.log(`[jarvis] segundo cérebro: nota "${n.title}" (${n.area}) salva`)
+  avisarCerebro(n.id)
+}
 let lembretes = []
 try {
   lembretes = JSON.parse(readFileSync(LEMBRETES_FILE, 'utf8'))
@@ -870,11 +885,11 @@ async function claudeOnce(text) {
       systemPrompt:
         'Você é o JARVIS, assistente pessoal no estilo do mordomo do Homem de Ferro. ' +
         'Responda em português do Brasil, falado, em no máximo três frases, sem markdown, ' +
-        'sem listas e sem emojis. Escreva números por extenso.',
+        'sem listas e sem emojis. Escreva números por extenso.' + cerebroPrompt(),
     },
   })
   for await (const m of q) {
-    if (m.type === 'result') out = m.subtype === 'success' ? String(m.result ?? '') : out
+    if (m.type === 'result') out = m.subtype === 'success' ? extrairSaves(String(m.result ?? ''), aoSalvar) : out
   }
   return out.trim()
 }
@@ -906,7 +921,7 @@ async function handleAtalho(req, res) {
   console.log(`[jarvis] atalho do iPhone: ${text}`)
   const cfg = loadConfig(PROJECT_ROOT)
   try {
-    const steps = await handleLocal(text, { config: cfg, allowOpen: true, state: atalhoState, lembrar })
+    const steps = await handleLocal(text, { config: cfg, allowOpen: true, state: atalhoState, lembrar, salvarNota: (n) => { const r = salvarNota(n); aoSalvar(r); return r } })
     if (steps?.length) return reply(steps.map((st) => st.say).filter(Boolean).join(' '))
     const ia = cfg.iaLocal ?? {}
     const model = ia.modelo || 'qwen2.5:3b'
@@ -1441,6 +1456,10 @@ wss.on('connection', (socket) => {
    */
   let answering = null
   const sendTurn = (msg) => send({ ...msg, ask: answering })
+  // Segura os [[SAVE:...]] do Claude: viram notas e nunca são falados.
+  const saveF = filtroSave((delta) => sendTurn({ type: 'text', delta }), aoSalvar)
+  // Notas editadas na tela durante a conversa: entram no próximo pedido.
+  let cerebroMudou = false
 
   /**
    * Asking the browser for something and waiting for the answer.
@@ -1592,7 +1611,7 @@ wss.on('connection', (socket) => {
       // tuned for a coding agent — verbose, file-oriented, and a large chunk
       // of input tokens on every turn. Replacing it makes the persona stick,
       // keeps answers short enough to speak, and cuts cost per turn.
-      systemPrompt: SYSTEM_PROMPT,
+      systemPrompt: SYSTEM_PROMPT + cerebroPrompt(),
       // Run from JARVIS's own workspace rather than the home directory. MCP
       // discovery does not depend on it — settingSources is empty and the
       // servers are passed in explicitly above — and file tools resolve
@@ -1699,7 +1718,7 @@ wss.on('connection', (socket) => {
               ev.delta?.type === 'text_delta' &&
               ev.delta.text
             ) {
-              sendTurn({ type: 'text', delta: ev.delta.text })
+              saveF.push(ev.delta.text)
             }
             if (
               ev?.type === 'content_block_start' &&
@@ -1741,10 +1760,11 @@ wss.on('connection', (socket) => {
             // empty text is indistinguishable from a turn that simply had
             // nothing to say — the HUD stops spinning and JARVIS stands there
             // silent. Say what happened instead.
+            saveF.flush()
             if (msg.subtype === 'success') {
               sendTurn({
                 type: 'done',
-                text: msg.result ?? '',
+                text: extrairSaves(msg.result ?? ''),
                 costUsd: msg.total_cost_usd ?? null,
               })
             } else if (cancelledAsk !== null && cancelledAsk === answering) {
@@ -1812,7 +1832,7 @@ wss.on('connection', (socket) => {
     let steps = null
     const cfg = loadConfig(PROJECT_ROOT)
     try {
-      steps = await handleLocal(text, { config: cfg, allowOpen: true, state: localState, lembrar })
+      steps = await handleLocal(text, { config: cfg, allowOpen: true, state: localState, lembrar, salvarNota: (n) => { const r = salvarNota(n); aoSalvar(r); return r } })
     } catch (err) {
       console.warn(`[jarvis] cérebro local falhou, passando ao Claude: ${err?.message ?? err}`)
       return false
@@ -1828,7 +1848,7 @@ wss.on('connection', (socket) => {
           model,
           text,
           history: localState.history,
-          cfg,
+          cfg: { ...cfg, cerebro: cerebroPrompt().split('MEMÓRIA VIVA')[0] },
           onDelta: (delta) => {
             if (my === localSeq) send({ type: 'text', delta, ask: id })
           },
@@ -1892,7 +1912,11 @@ wss.on('connection', (socket) => {
        * Waiting costs nothing when nothing is interrupting — the chain is an
        * already-resolved promise — and removes the cross-talk when there is.
        */
-      const text = msg.text
+      let text = msg.text
+      if (cerebroMudou) {
+        cerebroMudou = false
+        text = `[O usuário editou o segundo cérebro. Versão atual:${cerebroPrompt().split('MEMÓRIA VIVA')[0].replace(/^[\s\S]*?:\n/, '\n')}]\n\n${text}`
+      }
       const id = typeof msg.id === 'string' ? msg.id : null
       void settling.then(() => {
         answering = id
@@ -1913,6 +1937,23 @@ wss.on('connection', (socket) => {
         clearTimeout(slot.timer)
         slot.resolve(msg)
       }
+    }
+
+    if (msg.type === 'cerebro') {
+      send({ type: 'cerebro', ...cerebro(), flash: null })
+      return
+    }
+    if (msg.type === 'nota' && msg.nota && typeof msg.nota === 'object') {
+      const n = salvarNota(msg.nota)
+      cerebroMudou = true
+      avisarCerebro(n.id)
+      return
+    }
+    if (msg.type === 'nota-excluir' && typeof msg.id === 'string') {
+      excluirNota(msg.id)
+      cerebroMudou = true
+      avisarCerebro(null)
+      return
     }
 
     if (msg.type === 'painel') {

@@ -19,6 +19,7 @@
  * a tela, no ritmo da fala — é o "briefing" do layout.
  */
 
+import { AREAS } from './cerebro.mjs'
 import { spawn } from 'node:child_process'
 import { homedir, platform } from 'node:os'
 import { join, basename, dirname } from 'node:path'
@@ -746,6 +747,24 @@ export function lerLembrete(t) {
  * Tenta resolver o pedido localmente.
  * Retorna uma lista de passos [{ say, card? }] ou null (vai para o Claude).
  */
+const STOP = new Set('eu meu minha meus minhas o a os as um uma de do da dos das que e é em no na nos nas pra para por com sou tenho estou to tô vou quero gosto amo ele ela isso esse essa'.split(' '))
+const AREA_PISTAS = [
+  ['saude', /\b(treino|academia|corrida|correr|dormir|sono|dieta|alergi|medico|remedio|saude|futebol|esporte|peso)/],
+  ['financas', /\b(dinheiro|divida|economizar|guardar dinheiro|investir|investimento|salario|renda|financ|conta|cartao)/],
+  ['relacoes', /\b(namorada|namorado|esposa|mae|pai|irmao|irma|amigo|amiga|familia|filho|filha|socio|chefe)\b/],
+  ['aprendizado', /\b(estud|curso|livro|ler|aprender|faculdade|pos|concurso|prova|ingles)/],
+  ['projetos', /\b(projeto|app|aplicativo|site|canal|bot|jarvis|sistema)\b/],
+  ['trabalho', /\b(trabalho|emprego|empresa|cargo|cliente|licitac|advocacia|escritorio|processo)/],
+  ['metas', /\b(meta|objetivo|quero|sonho|plano|pretendo|ate o fim|ano que vem)\b/],
+]
+function notaDoTexto(txt) {
+  const n = clean(txt)
+  const area = (AREA_PISTAS.find(([, re]) => re.test(n)) ?? ['meta'])[0]
+  const palavras = txt.replace(/[.,;:!?]/g, '').split(/\s+/).filter((w) => w.length > 2 && !STOP.has(clean(w)))
+  const title = palavras.slice(0, 2).map((w) => w[0].toUpperCase() + w.slice(1)).join(' ') || 'Nota'
+  return { area, title, body: txt[0].toUpperCase() + txt.slice(1).replace(/\s*$/, '') }
+}
+
 export async function handleLocal(raw, ctx) {
   const cfg = ctx.config
   const t = clean(raw)
@@ -761,6 +780,16 @@ export async function handleLocal(raw, ctx) {
     state.pending = null
     if (/^(sim|quero|pode|claro|manda|le|leia|ler|bora|vai|ok|okay|com certeza|por favor|isso|beleza|demorou|uhum)\b/.test(t)) return jornal(cfg)
     if (/^(nao|agora nao|depois|deixa|dispenso|nem|nada)\b/.test(t)) return [{ say: 'Muito bem, senhor. Estou à disposição.' }]
+  }
+
+  // ---- segundo cérebro: "anota que...", "guarda no meu cérebro que..."
+  if (ctx.salvarNota) {
+    const m = t.match(/^(?:anota|anote|guarda|guarde|grava|grave|registra|registre|salva|salve|memoriza|memorize|lembra|lembre)(?: ai| isso)?(?: (?:no|em) (?:meu |seu )?(?:segundo )?cerebro| na (?:sua )?memoria)?(?: que|:) (.{3,})$/)
+    if (m) {
+      const nota = notaDoTexto(R(m[1]))
+      const n = ctx.salvarNota(nota)
+      return [{ say: 'Anotado no seu segundo cérebro, senhor.', card: { kind: 'texto', kicker: `SEGUNDO CÉREBRO · ${(AREAS[n.area] ?? n.area).toUpperCase()}`, title: n.title, text: n.body } }]
+    }
   }
 
   // ---- jornal do dia

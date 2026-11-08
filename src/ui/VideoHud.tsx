@@ -3,7 +3,9 @@ import { AnimatePresence, motion } from 'framer-motion'
 import { useStore, type Phase } from '../store'
 import { useCards, type Card } from '../cards'
 import { BRIDGE_HTTP_URL } from '../config'
-import { requestPainel } from '../lib/brain'
+import { requestPainel, sendCerebro } from '../lib/brain'
+import { useCerebro } from '../cerebro'
+import { SecondBrain } from './SecondBrain'
 import { Blades } from './Blades'
 import { Effects } from './Effects'
 import { Pointer } from './Pointer'
@@ -159,7 +161,28 @@ export function VideoHud() {
   const last = turns[turns.length - 1]
   const line = caption || (phase === 'speaking' && last?.role === 'jarvis' ? last.text.split(/(?<=[.!?])\s/).slice(-1)[0] : '')
 
-  useEffect(() => setOrbLayout(hasOpen), [hasOpen])
+  const cerebroAberto = useCerebro((s) => s.aberto)
+  useEffect(() => setOrbLayout(cerebroAberto ? 'cerebro' : hasOpen), [hasOpen, cerebroAberto])
+
+  // Tela de inicialização: o nome, "sincronizando dados...", por ~2,2 s.
+  const [bootando, setBootando] = useState(true)
+  useEffect(() => {
+    const id = setTimeout(() => setBootando(false), 2200)
+    return () => clearTimeout(id)
+  }, [])
+  const mostraBoot = phase === 'boot' || (bootando && phase !== 'offline')
+
+  // Nota nova gravada pela memória viva: aparece um cartão, se o grafo
+  // estiver fechado (o "anota que..." local já manda o seu).
+  const flashAt = useCerebro((s) => s.flashAt)
+  useEffect(() => {
+    if (!flashAt) return
+    const st = useCerebro.getState()
+    const n = st.notas.find((x) => x.id === st.flash)
+    if (!n || st.aberto) return
+    const ja = useCards.getState().slots.some((x) => x.card.title === n.title && (x.card.kicker ?? '').startsWith('SEGUNDO') && Date.now() - x.at < 4000)
+    if (!ja) useCards.getState().push({ id: `cb-${flashAt}`, kind: 'texto', kicker: 'SEGUNDO CÉREBRO · NOTA SALVA', title: n.title, text: n.body })
+  }, [flashAt])
 
   // O painel inicial: assim que ele fica pronto, e de novo a cada 30 minutos.
   const [painelPedido, setPainelPedido] = useState(false)
@@ -167,12 +190,13 @@ export function VideoHud() {
     if (painelPedido || phase === 'offline' || phase === 'boot') return
     setPainelPedido(true)
     requestPainel()
+    sendCerebro({ type: 'cerebro' })
     const id = setInterval(requestPainel, 30 * 60 * 1000)
     return () => clearInterval(id)
   }, [phase, painelPedido])
 
   return (
-    <div className={`vh ${hasOpen ? 'vh-open' : 'vh-closed'}`}>
+    <div className={`vh ${hasOpen ? 'vh-open' : 'vh-closed'} ${cerebroAberto ? 'vh-cerebro' : ''}`}>
       <div className="vh-grid" />
       <WireOrb />
 
@@ -210,8 +234,16 @@ export function VideoHud() {
         </AnimatePresence>
       </div>
 
-      {slots.length > 0 && (
-        <div className="vh-rail">
+      <div className="vh-rail">
+        <button
+          className={`vh-rail-btn ${cerebroAberto ? 'on' : ''}`}
+          title="Segundo cérebro"
+          onClick={() => useCerebro.getState().abrir()}
+        >
+          <span>🧠</span>
+          <i>Cérebro</i>
+        </button>
+        {slots.length > 0 && (
           <button
             className={`vh-rail-btn vh-rail-all ${hasOpen ? 'on' : ''}`}
             title={hasOpen ? 'Minimizar tudo' : 'Mostrar todas as informações'}
@@ -220,6 +252,7 @@ export function VideoHud() {
             <span>{hasOpen ? '▣' : '▤'}</span>
             <b>{slots.length}</b>
           </button>
+        )}
           {GRUPOS.map((g) => {
             const itens = slots.filter((x) => grupoDe(x.card) === g.id)
             if (!itens.length) return null
@@ -241,8 +274,9 @@ export function VideoHud() {
               </button>
             )
           })}
-        </div>
-      )}
+      </div>
+
+      {cerebroAberto && <SecondBrain />}
 
       {line && <div className="vh-caption">{line}</div>}
       {error && <div className="vh-error">{error}</div>}
@@ -250,6 +284,17 @@ export function VideoHud() {
         diga <b>“Jarvis”</b> ou <b>“amigão”</b> · <b>“pausar”</b> para parar de ouvir · <kbd>Espaço</kbd> para falar · <kbd>V</kbd> voz:{' '}
         {currentVoiceName().replace(/^Microsoft\s+/, '').replace(/\s*-.*$/, '')} · <kbd>D</kbd> diagnóstico
       </div>
+
+      <AnimatePresence>
+      {mostraBoot && (
+        <motion.div className="vh-boot" key="boot" initial={{ opacity: 1 }} exit={{ opacity: 0 }} transition={{ duration: 0.7 }}>
+          <div className="vh-boot-name">J.A.R.V.I.S.</div>
+          <hr />
+          <div className="vh-boot-sync">SINCRONIZANDO DADOS...</div>
+          <div className="vh-boot-ver">v5.0 · REBUILD</div>
+        </motion.div>
+      )}
+      </AnimatePresence>
 
       <Blades />
       <Effects />

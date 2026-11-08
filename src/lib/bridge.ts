@@ -1,4 +1,5 @@
 import type { AskHandlers } from './anthropic'
+import { useCerebro } from '../cerebro'
 import type { Blade, Panel } from '../store'
 import { BRIDGE_WS_URL } from '../config'
 
@@ -197,6 +198,8 @@ function dispatch(ws: WebSocket) {
       const m = msg as { text?: string; card?: Record<string, unknown> }
       if (m.card) onCard?.(m.card)
       if (m.text) onAviso?.(m.text)
+    } else if (msg.type === 'cerebro') {
+      useCerebro.getState().set(msg as Parameters<ReturnType<typeof useCerebro.getState>['set']>[0])
     } else if (msg.type === 'card' && (msg as { card?: Record<string, unknown> }).card) {
       onCard?.((msg as { card: Record<string, unknown> }).card)
     } else if (msg.type === 'capture' && msg.id) {
@@ -503,6 +506,11 @@ export async function ask(
 /** Pede ao cérebro o painel inicial (clima e notícias). */
 export function requestPainel(): void {
   if (socket && socket.readyState === WebSocket.OPEN) socket.send(JSON.stringify({ type: 'painel' }))
+}
+
+/** Segundo cérebro: pedir as notas, salvar uma, apagar uma. */
+export function sendCerebro(msg: Record<string, unknown>): void {
+  if (socket && socket.readyState === WebSocket.OPEN) socket.send(JSON.stringify(msg))
 }
 
 export function cancel(): void {

@@ -47,8 +47,8 @@ export function Ignition({ onStart }: { onStart: () => void }) {
       */}
       <span className="ignition-ring" />
       <span className="ignition-label">
-        <span className="ignition-word">INICIALIZAR</span>
-        <span className="ignition-sub">clique, ou bata palmas, para ligar</span>
+        <span className="ignition-word">► ATIVAR SISTEMA</span>
+        <span className="ignition-sub">CLIQUE PARA INICIAR · ou bata palmas</span>
       </span>
     </button>
   )
