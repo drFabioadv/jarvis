@@ -1,0 +1,23 @@
+J.A.R.V.I.S. - versao em portugues do Brasil
+=============================================
+
+SE VOCE JA TEM A VERSAO ANTERIOR
+  Extraia este zip POR CIMA da pasta antiga (substituir tudo)
+  e de dois cliques em INSTALAR-APP.bat.
+
+PRIMEIRA VEZ
+  1. Extraia este zip numa pasta (ex.: Documentos\jarvis).
+  2. De dois cliques em INSTALAR-APP.bat e siga as instrucoes.
+     (Se o Windows avisar "O Windows protegeu o computador":
+      Mais informacoes -> Executar assim mesmo.)
+  3. Se pedir login, entre com a sua conta Claude (Pro ou Max)
+     e digite /exit no final.
+
+DEPOIS DISSO
+  - O JARVIS liga sozinho quando o computador ligar.
+  - Fica no icone perto do relogio (setinha ^).
+  - Diga "Ei Jarvis" a qualquer momento: o icone acende e a janela aparece.
+  - Fechar a janela nao desliga: ele continua ouvindo.
+  - Para desligar de verdade: botao direito no icone -> Sair.
+
+O passo a passo completo esta no GUIA-JARVIS.pdf.

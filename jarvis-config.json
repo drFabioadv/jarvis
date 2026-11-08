@@ -1,0 +1,11 @@
+{
+  "nome": "senhor",
+  "cidade": "Belém",
+  "latitude": -1.4558,
+  "longitude": -48.4902,
+  "temas": ["tecnologia", "inteligência artificial", "Pará", "economia"],
+  "noticiasPorBriefing": 4,
+  "modeloClaude": "haiku",
+  "esforcoClaude": "low",
+  "etapasMaximas": 8
+}
