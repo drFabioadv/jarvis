@@ -1,5 +1,6 @@
 import type { AskHandlers } from './anthropic'
 import { useCerebro } from '../cerebro'
+import { useInteg, abrirPainel, type Config } from '../integ'
 import type { Blade, Panel } from '../store'
 import { BRIDGE_WS_URL } from '../config'
 
@@ -198,6 +199,18 @@ function dispatch(ws: WebSocket) {
       const m = msg as { text?: string; card?: Record<string, unknown> }
       if (m.card) onCard?.(m.card)
       if (m.text) onAviso?.(m.text)
+    } else if (msg.type === 'integ') {
+      const { type: _t, ...rest } = msg as Record<string, unknown>
+      void _t
+      useInteg.getState().set(rest as Parameters<ReturnType<typeof useInteg.getState>['set']>[0])
+    } else if (msg.type === 'integ-config') {
+      const m = msg as { config?: Config; salvo?: boolean }
+      useInteg.getState().set({ config: m.config ?? null, ...(m.salvo ? { salvoAt: Date.now() } : {}) })
+    } else if (msg.type === 'abrir') {
+      const p = (msg as { painel?: string }).painel
+      if (p === 'agenda' || p === 'emails' || p === 'config' || p === 'cerebro') abrirPainel(p)
+    } else if (msg.type === 'digest-auto') {
+      useInteg.getState().digest?.()
     } else if (msg.type === 'cerebro') {
       useCerebro.getState().set(msg as Parameters<ReturnType<typeof useCerebro.getState>['set']>[0])
     } else if (msg.type === 'card' && (msg as { card?: Record<string, unknown> }).card) {

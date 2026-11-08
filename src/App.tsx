@@ -7,6 +7,7 @@ import { Diagnostics } from './ui/Diagnostics'
 import { VoiceRing } from './ui/VoiceRing'
 import { VideoHud } from './ui/VideoHud'
 import { useCerebro } from './cerebro'
+import { useInteg, abrirPainel } from './integ'
 import { useCards } from './cards'
 import { useStore } from './store'
 import { startVoice, type Voice, type VoiceMode } from './lib/voice'
@@ -322,8 +323,10 @@ export default function App() {
     store.getState().setPhase('listening')
   }
 
+  // O morning digest (botão DIGEST e o bom dia automático da manhã).
+  useInteg.getState().set({ digest: () => void respond('bom dia') })
   // Para testes no console (só em desenvolvimento): __ask('bom dia')
-  if (import.meta.env.DEV) (window as unknown as Record<string, unknown>).__ask = (t: string) => void respond(t)
+  if (import.meta.env.DEV) Object.assign(window as unknown as Record<string, unknown>, { __ask: (t: string) => void respond(t), __integ: useInteg })
 
   const onUtterance = (text: string) => {
     const phase = store.getState().phase
@@ -343,6 +346,23 @@ export default function App() {
       store.getState().setPhase('speaking')
       return
     }
+    // Configurações e fechar painéis, por voz.
+    if (/^(abre|abrir|mostra)( as| a)? (configuracoes|configuracao|engrenagem)$/.test(semNome)) {
+      abrirPainel('config')
+      const spk = createSpeaker()
+      speaker.current = spk
+      spk.say('Configurações abertas.')
+      void spk.end().then(() => store.getState().setPhase('dormant'))
+      return
+    }
+    if (/^(fecha|fechar|esconde|esconder)( a| o| os| as)? (agenda|e ?mails?|emails?|configuracoes|painel)$/.test(semNome)) {
+      useInteg.getState().set({ painel: null })
+      const spk = createSpeaker()
+      speaker.current = spk
+      spk.say('Fechado.')
+      void spk.end().then(() => store.getState().setPhase('dormant'))
+      return
+    }
     // O segundo cérebro, por voz.
     const cb = semNome.match(/^(abre|abrir|mostra|mostrar|exibe|ver|fecha|fechar|esconde|esconder|minimiza)( o| meu| o meu)? (segundo )?cerebro$/)
     if (cb) {
@@ -358,6 +378,7 @@ export default function App() {
     if (/^(minimiza|minimizar|esconde|esconder|fecha|fechar|tira|recolhe|recolher)( tudo| todas| todos| as janelas| as informacoes| o painel| os cartoes| as noticias| isso)+$/.test(semNome)) {
       useCards.getState().minimizeAll()
       useCerebro.getState().abrir(false)
+      useInteg.getState().set({ painel: null })
       const spk = createSpeaker()
       speaker.current = spk
       spk.say('Minimizado.')

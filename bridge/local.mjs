@@ -19,7 +19,7 @@
  * a tela, no ritmo da fala — é o "briefing" do layout.
  */
 
-import { AREAS } from './cerebro.mjs'
+import { AREAS, cerebro } from './cerebro.mjs'
 import { spawn } from 'node:child_process'
 import { homedir, platform } from 'node:os'
 import { join, basename, dirname } from 'node:path'
@@ -829,9 +829,16 @@ export async function handleLocal(raw, ctx) {
     return [{ say: `Hoje é ${DIAS[now.getDay()]}, ${now.getDate() === 1 ? 'primeiro' : falarNumero(now.getDate())} de ${MESES[now.getMonth()]}.` }]
   }
 
-  // ---- briefing
-  if (/^(bom dia|boa tarde|boa noite)\b/.test(t) || /\b(briefing|me atualiza|me atualize|resumo do dia|novidades do dia|o que tem de novo)\b/.test(t)) {
-    return briefing(t, cfg, state)
+  // ---- briefing / morning digest
+  if (/^(bom dia|boa tarde|boa noite)\b/.test(t) || /\b(briefing|digest|me atualiza|me atualize|resumo do dia|novidades do dia|o que tem de novo)\b/.test(t)) {
+    ctx.integ?.marcarDigest?.()
+    return briefing(t, cfg, state, ctx.integ)
+  }
+
+  // ---- agenda e e-mails
+  if (ctx.integ) {
+    const r = await agendaEmails(t, ctx.integ)
+    if (r) return r
   }
 
   // ---- clima
@@ -976,7 +983,16 @@ function saudacao(t) {
  * O "bom dia": hora, clima, as suas coisas (e-mails, redes — quando estiverem
  * conectadas), as manchetes rápidas e, no fim, a oferta do jornal do dia.
  */
-async function briefing(t, cfg, state) {
+function fraseDeFoco() {
+  const metas = cerebro().notas.filter((n) => n.area === 'metas')
+  const frases = metas.flatMap((n) => n.body.split(/(?<=[.!?;])\s+|,\s+(?=[a-zà-ú]+ar\b)| e (?=[a-zà-ú]+ar\b)/i)).map((x) => x.replace(/[.;]+$/, '').trim()).filter((x) => x.length > 8)
+  if (!frases.length) return ''
+  const dia = Math.floor(Date.now() / 86400000)
+  const f = frases[dia % frases.length]
+  return f[0].toUpperCase() + f.slice(1) + '.'
+}
+
+async function briefing(t, cfg, state, integ) {
   const now = new Date()
   const steps = []
   steps.push({
@@ -999,24 +1015,34 @@ async function briefing(t, cfg, state) {
 
   if (w) steps.push({ say: weatherSpeech(w), card: weatherCard(w) })
 
-  // As suas coisas. Por enquanto nada conectado; quando estiver, cada app
-  // entra aqui com o resumo dele (e-mails novos, LinkedIn, X...).
-  const apps = cfg.apps ?? {}
-  const conectados = Object.entries(apps).filter(([, v]) => v)
-  steps.push({
-    say: conectados.length ? '' : 'Seus e-mails, o LinkedIn e o Twitter ainda não estão conectados.',
-    card: {
-      kind: 'lista',
-      kicker: 'SEUS APPS',
-      title: conectados.length ? 'Atualizações' : 'Aguardando conexão',
-      items: [
-        { label: '✉ E-mails', sub: apps.email ? 'conectado' : 'não conectado' },
-        { label: 'in LinkedIn', sub: apps.linkedin ? 'conectado' : 'não conectado' },
-        { label: '𝕏 Twitter / X', sub: apps.twitter ? 'conectado' : 'não conectado' },
-        { label: '📅 Agenda', sub: apps.agenda ? 'conectada' : 'não conectada' },
-      ],
-    },
-  })
+  // A agenda de hoje e os e-mails que pedem ação (se conectados).
+  if (integ) {
+    const st = integ.estado()
+    if (st.temAgenda) {
+      const hoje = eventosDoDia(st.eventos, 0).filter((e) => e.diaTodo || e.fim > Date.now())
+      steps.push({
+        say: hoje.length
+          ? `Na agenda de hoje: ${hoje.slice(0, 5).map(falarEvento).join('; ')}.`
+          : 'Sua agenda de hoje está livre.',
+        card: agendaCard(hoje, 'AGENDA · HOJE'),
+      })
+    }
+    if (st.temEmail) {
+      const acao = st.emails.filter((e) => e.balde === 'acao' && !e.lido)
+      const novos = st.emails.filter((e) => !e.lido).length
+      steps.push({
+        say: acao.length
+          ? `Você tem ${falarNumero(novos)} e-mails não lidos; ${acao.length === 1 ? 'um pede' : `${falarNumero(acao.length)} pedem`} ação: ${acao.slice(0, 3).map((e) => `${e.de}, ${e.resumo}`).join('; ')}.`
+          : novos
+            ? `Você tem ${falarNumero(novos)} e-mails não lidos, nenhum pedindo ação.`
+            : 'Nenhum e-mail novo.',
+        card: emailsCard(st.emails),
+      })
+    }
+    if (!st.temAgenda && !st.temEmail) {
+      steps.push({ say: '', card: { kind: 'lista', kicker: 'SEUS APPS', title: 'Agenda e e-mails', items: [{ label: '📅 Agenda', sub: 'configure no ⚙' }, { label: '✉ E-mails', sub: 'configure no ⚙' }] } })
+    }
+  }
 
   let n = 0
   const ditas = []
@@ -1028,6 +1054,10 @@ async function briefing(t, cfg, state) {
     n++
   }
   if (!w && !n) steps.push({ say: 'Receio que as fontes de clima e notícias não responderam agora.' })
+
+  // Frase de foco do dia, a partir das metas do segundo cérebro.
+  const foco = fraseDeFoco()
+  if (foco) steps.push({ say: `Foco do dia: ${foco}`, card: { kind: 'texto', kicker: 'FOCO DO DIA', title: foco } })
 
   steps.push({
     say: 'Quer que eu leia o jornal do dia? São alguns minutos com política, direito, inteligência artificial, economia, o Pará e o mundo.',
@@ -1114,4 +1144,125 @@ export async function painelInicial(cfg) {
     chips: ['POLÍTICA', 'DIREITO', 'IA', 'MUNDO'],
   })
   return cards
+}
+
+
+// ---------------------------------------------------------------- agenda e e-mails
+
+const hhmm = (t) => new Date(t).toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' })
+
+/** Eventos do dia `d` (0 = hoje, 1 = amanhã...). */
+function eventosDoDia(eventos, d) {
+  const ini = new Date()
+  ini.setHours(0, 0, 0, 0)
+  ini.setDate(ini.getDate() + d)
+  const fim = ini.getTime() + 86400000
+  return eventos.filter((e) => e.inicio < fim && e.fim > ini.getTime())
+}
+
+function falarEvento(e) {
+  return e.diaTodo ? `o dia todo, ${e.titulo}` : `às ${falarHora(new Date(e.inicio))}, ${e.titulo}`
+}
+
+function quantoFalta(ms) {
+  const min = Math.max(1, Math.round(ms / 60000))
+  if (min < 60) return `${falarNumero(min)} ${min === 1 ? 'minuto' : 'minutos'}`
+  const h = Math.floor(min / 60)
+  const r = min % 60
+  const hs = h === 1 ? 'uma hora' : h === 2 ? 'duas horas' : `${falarNumero(h)} horas`
+  return r ? `${hs} e ${falarNumero(r)} ${r === 1 ? 'minuto' : 'minutos'}` : hs
+}
+
+function agendaCard(evs, kicker) {
+  return {
+    kind: 'lista',
+    kicker,
+    title: evs.length ? `${evs.length} compromisso${evs.length > 1 ? 's' : ''}` : 'Agenda livre',
+    items: evs.slice(0, 8).map((e) => ({ label: `${e.diaTodo ? 'DIA TODO' : hhmm(e.inicio)} · ${e.titulo}`, sub: [e.agenda, e.local].filter(Boolean).join(' · ') })),
+  }
+}
+
+function emailsCard(emails) {
+  const acao = emails.filter((e) => e.balde === 'acao' && !e.lido)
+  const info = emails.filter((e) => e.balde === 'info' && !e.lido)
+  return {
+    kind: 'lista',
+    kicker: 'E-MAILS',
+    title: `⚡ ${acao.length} ação · ${info.length} info`,
+    items: [...acao, ...info].slice(0, 6).map((e) => ({ label: `${e.balde === 'acao' ? '⚡ ' : ''}${e.de}`, sub: e.resumo })),
+  }
+}
+
+async function agendaEmails(t, integ) {
+  const st = () => integ.estado()
+  const semAgenda = [{ say: 'Sua agenda ainda não está conectada, senhor. Cole o link secreto da agenda no ícone de engrenagem.', abrir: 'config' }]
+  const semEmail = [{ say: 'Seus e-mails ainda não estão conectados, senhor. Configure as contas no ícone de engrenagem.', abrir: 'config' }]
+
+  // atualizar
+  if (/\b(atualiza|atualizar|atualize|recarrega|busca de novo)\b.*\b(e ?mails?|emails?|caixa)\b/.test(t)) {
+    if (!st().temEmail) return semEmail
+    await integ.atualizarEmails()
+    const s = st()
+    return [{ say: `Pronto. ${s.acao ? `${s.acao === 1 ? 'Um' : falarNumero(s.acao)} pedindo ação.` : 'Nenhum pedindo ação.'}`, card: emailsCard(s.emails), abrir: 'emails' }]
+  }
+  if (/\b(atualiza|atualizar|atualize|recarrega)\b.*\bagenda\b/.test(t)) {
+    if (!st().temAgenda) return semAgenda
+    await integ.atualizarAgenda()
+    return [{ say: 'Agenda atualizada.', abrir: 'agenda' }]
+  }
+
+  // próximo compromisso
+  if (/\b(proximo compromisso|proxima reuniao|proximo evento|proximo horario|qual (e )?o proximo|o que vem agora)\b/.test(t)) {
+    if (!st().temAgenda) return semAgenda
+    const prox = st().eventos.find((e) => !e.diaTodo && e.inicio > Date.now())
+    if (!prox) return [{ say: 'Não há mais compromissos nos próximos sete dias.' }]
+    const dia = eventosDoDia([prox], 0).length ? '' : eventosDoDia([prox], 1).length ? 'amanhã ' : `${DIAS[new Date(prox.inicio).getDay()]} `
+    return [{ say: `Seu próximo compromisso é ${prox.titulo}, ${dia}às ${falarHora(new Date(prox.inicio))}, daqui a ${quantoFalta(prox.inicio - Date.now())}.`, card: agendaCard([prox], 'PRÓXIMO COMPROMISSO') }]
+  }
+
+  // semana
+  if (/\b(agenda da semana|minha semana|proximos dias|resto da semana|essa semana|esta semana)\b/.test(t) && /\b(agenda|compromisso|semana|tenho|dias)\b/.test(t)) {
+    if (!st().temAgenda) return semAgenda
+    const steps = []
+    for (let d = 0; d < 7; d++) {
+      const evs = eventosDoDia(st().eventos, d).filter((e) => d > 0 || e.diaTodo || e.fim > Date.now())
+      if (!evs.length) continue
+      const nome = d === 0 ? 'Hoje' : d === 1 ? 'Amanhã' : DIAS[(new Date().getDay() + d) % 7].replace(/^./, (c) => c.toUpperCase())
+      steps.push(`${nome}: ${evs.slice(0, 4).map((e) => e.titulo).join(', ')}`)
+    }
+    return [{ say: steps.length ? `${steps.join('. ')}.` : 'Sua semana está livre.', abrir: 'agenda' }]
+  }
+
+  // amanhã
+  if (/\b(agenda de amanha|o que (eu )?tenho amanha|compromissos? (de |pra |para )?amanha|tenho algo amanha)\b/.test(t)) {
+    if (!st().temAgenda) return semAgenda
+    const evs = eventosDoDia(st().eventos, 1)
+    return [{ say: evs.length ? `Amanhã você tem: ${evs.slice(0, 6).map(falarEvento).join('; ')}.` : 'Amanhã sua agenda está livre.', card: agendaCard(evs, 'AGENDA · AMANHÃ') }]
+  }
+
+  // hoje
+  if (/\b(minha agenda|agenda de hoje|o que (eu )?tenho (pra |para )?hoje|compromissos? (de |pra |para )?hoje|meus compromissos|tenho (algum )?compromisso|tenho alguma reuniao|como (esta|ta) (minha|a) agenda)\b/.test(t)) {
+    if (!st().temAgenda) return semAgenda
+    const evs = eventosDoDia(st().eventos, 0).filter((e) => e.diaTodo || e.fim > Date.now())
+    return [{ say: evs.length ? `Hoje você tem ${evs.length === 1 ? 'um compromisso' : `${falarNumero(evs.length)} compromissos`}: ${evs.slice(0, 6).map(falarEvento).join('; ')}.` : 'Sua agenda de hoje está livre, senhor.', abrir: 'agenda' }]
+  }
+
+  // e-mails importantes
+  if (/\b(e ?mails?|emails?)\b.*\b(importante|importantes|urgente|urgentes|acao)\b|\btem (algum )?(e ?mail|email)\b/.test(t)) {
+    if (!st().temEmail) return semEmail
+    const acao = st().emails.filter((e) => e.balde === 'acao' && !e.lido)
+    if (!acao.length) return [{ say: 'Nenhum e-mail pedindo ação. Caixa tranquila, senhor.' }]
+    return [{ say: `${acao.length === 1 ? 'Um e-mail pede' : `${falarNumero(acao.length)} e-mails pedem`} ação: ${acao.slice(0, 4).map((e) => `${e.de}: ${e.resumo}`).join('. ')}.`, abrir: 'emails' }]
+  }
+
+  // meus e-mails
+  if (/\b(meus e ?mails?|meus emails?|caixa de entrada|e ?mails? novos|emails? novos|ler (os )?e ?mails?|le (os )?(meus )?e ?mails?|chegou (algum )?e ?mail)\b/.test(t)) {
+    if (!st().temEmail) return semEmail
+    const es = st().emails.filter((e) => !e.lido)
+    const conta = (b) => es.filter((e) => e.balde === b).length
+    const acao = es.filter((e) => e.balde === 'acao')
+    const cab = `Você tem ${falarNumero(es.length)} não lidos: ${falarNumero(conta('acao'))} de ação, ${falarNumero(conta('info'))} ${conta('info') === 1 ? 'informativo' : 'informativos'} e ${falarNumero(conta('ruido'))} de ruído.`
+    return [{ say: acao.length ? `${cab} Os de ação: ${acao.slice(0, 4).map((e) => `${e.de}: ${e.resumo}`).join('. ')}.` : cab, abrir: 'emails' }]
+  }
+  return null
 }

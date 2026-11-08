@@ -19,6 +19,7 @@ import { WebSocketServer } from 'ws'
 import { handleLocal, loadConfig, painelInicial } from './local.mjs'
 import { ollamaChat, ollamaReady, needsClaude } from './ollama.mjs'
 import { iniciarIndice, indiceAtual } from './indice.mjs'
+import { iniciarIntegracoes, estadoIntegracoes, configPublica, salvarConfig, lerConfig, atualizarAgenda, atualizarEmails, contextoCompacto, prontoIntegracoes } from './integracoes.mjs'
 import { iniciarCerebro, cerebro, cerebroPrompt, salvarNota, excluirNota, extrairSaves, filtroSave } from './cerebro.mjs'
 import { loadLocalStt, transcribeLocal } from './stt-local.mjs'
 import { timingSafeEqual } from 'node:crypto'
@@ -187,6 +188,15 @@ const DISABLED = new Set(
 const MODEL = process.env.JARVIS_MODEL ?? 'claude-opus-5'
 /** Modelos leves (haiku) não aceitam o parâmetro de esforço. */
 const SUPPORTS_EFFORT = !/haiku/i.test(MODEL)
+/** O modelo escolhido nas configurações (⚙) do JARVIS; se nenhum, o padrão. */
+function modeloAtual() {
+  try {
+    const m = JSON.parse(readFileSync(join(PROJECT_ROOT, 'integracoes.json'), 'utf8')).modelo
+    if (m) return m
+  } catch {}
+  return MODEL
+}
+const effortDe = (m) => (/haiku/i.test(m) ? {} : { effort: EFFORT })
 
 /**
  * How hard the model thinks before answering.
@@ -551,8 +561,13 @@ const PROMPT_PC = `This computer (Windows) — when the user asks you to DO some
 
 `
 
+const PROMPT_MODULOS = `
+AGENDA, E-MAILS E NOTÍCIAS: você tem acesso às agendas do Google e às caixas de entrada do usuário (só leitura), já resumidas no começo de cada pedido entre colchetes ("Agenda de hoje: ... | E-mails pedindo ação: N"). Use isso para responder coisas como "consigo encaixar um almoço amanhã?". Se perguntarem o que você sabe fazer, cite: "minha agenda", "próximo compromisso", "agenda de amanhã", "agenda da semana", "meus e-mails", "tem e-mail importante?", "atualizar e-mails", "notícias de (assunto)", "bom dia" (o briefing do dia), "lê o jornal", "anota que...", "abre o segundo cérebro", lembretes, clima, abrir programas, pastas e sites, e "pausar".
+
+`
 const SYSTEM_PROMPT = [
   PROMPT_CORE,
+  PROMPT_MODULOS,
   PROMPT_BLADES,
   DISABLED.has('interface') ? '' : PROMPT_INTERFACE,
   DISABLED.has('browser') ? '' : PROMPT_BROWSER,
@@ -793,6 +808,24 @@ const PROJECT_ROOT = fileURLToPath(new URL('..', import.meta.url))
 iniciarIndice(PROJECT_ROOT)
 iniciarCerebro(PROJECT_ROOT)
 
+/** Uma pergunta avulsa ao Claude, sem ferramentas (triagem de e-mails). */
+async function perguntarClaude(prompt) {
+  let out = ''
+  const q = query({
+    prompt,
+    options: {
+      model: 'haiku',
+      maxTurns: 1,
+      tools: [],
+      settingSources: [],
+      cwd: tmpdir(),
+      systemPrompt: 'Você classifica e-mails. Responda só com o JSON pedido, sem comentários.',
+    },
+  })
+  for await (const m of q) if (m.type === 'result' && m.subtype === 'success') out = String(m.result ?? '')
+  return out
+}
+
 // Audição local (Whisper no PC): ouve mesmo com a janela escondida ou num jogo.
 const AUDICAO_CFG = loadConfig(PROJECT_ROOT)
 const LOCAL_STT = !elevenKey() && (AUDICAO_CFG.audicao ?? 'local') === 'local' && process.env.JARVIS_LOCAL_STT !== '0'
@@ -807,6 +840,18 @@ const uiPhase = { phase: '', at: 0, wakes: 0, aviso: '', avisoSeq: 0 }
 // fala em todas as janelas abertas e a bandeja mostra um aviso.
 const LEMBRETES_FILE = join(PROJECT_ROOT, 'lembretes.json')
 const clientes = new Set()
+/** O que o cérebro local usa para agenda e e-mails. */
+const INTEG = {
+  estado: estadoIntegracoes,
+  atualizarAgenda,
+  atualizarEmails,
+  pronto: prontoIntegracoes,
+  marcarDigest: () => {
+    try {
+      writeFileSync(join(PROJECT_ROOT, 'digest-ultimo.txt'), new Date().toLocaleDateString('pt-BR'))
+    } catch {}
+  },
+}
 /** Avisa todas as telas que o segundo cérebro mudou (flash = nota que pisca). */
 function avisarCerebro(flash) {
   const msg = { type: 'cerebro', ...cerebro(), flash: flash ?? null }
@@ -820,6 +865,17 @@ const aoSalvar = (n) => {
   console.log(`[jarvis] segundo cérebro: nota "${n.title}" (${n.area}) salva`)
   avisarCerebro(n.id)
 }
+iniciarIntegracoes(PROJECT_ROOT, {
+  perguntar: perguntarClaude,
+  avisar: () => {
+    const msg = { type: 'integ', ...estadoIntegracoes() }
+    for (const c of clientes) {
+      try {
+        c(msg)
+      } catch {}
+    }
+  },
+})
 let lembretes = []
 try {
   lembretes = JSON.parse(readFileSync(LEMBRETES_FILE, 'utf8'))
@@ -875,8 +931,8 @@ async function claudeOnce(text) {
   const q = query({
     prompt: text,
     options: {
-      model: MODEL,
-      ...(SUPPORTS_EFFORT ? { effort: EFFORT } : {}),
+      model: modeloAtual(),
+      ...effortDe(modeloAtual()),
       maxTurns: 4,
       tools: ['WebSearch', 'WebFetch'],
       allowedTools: ['WebSearch', 'WebFetch'],
@@ -921,7 +977,7 @@ async function handleAtalho(req, res) {
   console.log(`[jarvis] atalho do iPhone: ${text}`)
   const cfg = loadConfig(PROJECT_ROOT)
   try {
-    const steps = await handleLocal(text, { config: cfg, allowOpen: true, state: atalhoState, lembrar, salvarNota: (n) => { const r = salvarNota(n); aoSalvar(r); return r } })
+    const steps = await handleLocal(text, { config: cfg, allowOpen: true, state: atalhoState, lembrar, salvarNota: (n) => { const r = salvarNota(n); aoSalvar(r); return r }, integ: INTEG })
     if (steps?.length) return reply(steps.map((st) => st.say).filter(Boolean).join(' '))
     const ia = cfg.iaLocal ?? {}
     const model = ia.modelo || 'qwen2.5:3b'
@@ -1643,8 +1699,8 @@ wss.on('connection', (socket) => {
       // Normally your own `/model` preference would decide, but that lives in
       // the settings files `settingSources: []` deliberately stops loading, so
       // without this line nothing in the project has a say at all.
-      model: MODEL,
-      ...(SUPPORTS_EFFORT ? { effort: EFFORT } : {}),
+      model: modeloAtual(),
+      ...effortDe(modeloAtual()),
       maxTurns: Number(process.env.JARVIS_MAX_TURNS) || 24,
       // Nothing resumes a JARVIS session — every socket starts a new one — so
       // the transcript the SDK writes by default is only ever a record: every
@@ -1832,7 +1888,7 @@ wss.on('connection', (socket) => {
     let steps = null
     const cfg = loadConfig(PROJECT_ROOT)
     try {
-      steps = await handleLocal(text, { config: cfg, allowOpen: true, state: localState, lembrar, salvarNota: (n) => { const r = salvarNota(n); aoSalvar(r); return r } })
+      steps = await handleLocal(text, { config: cfg, allowOpen: true, state: localState, lembrar, salvarNota: (n) => { const r = salvarNota(n); aoSalvar(r); return r }, integ: INTEG })
     } catch (err) {
       console.warn(`[jarvis] cérebro local falhou, passando ao Claude: ${err?.message ?? err}`)
       return false
@@ -1869,6 +1925,7 @@ wss.on('connection', (socket) => {
     for (const [i, st] of steps.entries()) {
       if (my !== localSeq) return true
       if (st.card) send({ type: 'card', card: { id: `${id ?? 'l'}-${my}-${i}`, ...st.card }, ask: id })
+      if (st.abrir) send({ type: 'abrir', painel: st.abrir })
       const piece = (full ? ' ' : '') + st.say
       full += piece
       send({ type: 'text', delta: piece, ask: id })
@@ -1913,6 +1970,10 @@ wss.on('connection', (socket) => {
        * already-resolved promise — and removes the cross-talk when there is.
        */
       let text = msg.text
+      // Agenda de hoje e e-mails de ação, compactos, para ele responder com
+      // contexto real ("consigo encaixar um almoço amanhã?").
+      const ctxInteg = contextoCompacto()
+      if (ctxInteg) text = `[${ctxInteg}]\n${text}`
       if (cerebroMudou) {
         cerebroMudou = false
         text = `[O usuário editou o segundo cérebro. Versão atual:${cerebroPrompt().split('MEMÓRIA VIVA')[0].replace(/^[\s\S]*?:\n/, '\n')}]\n\n${text}`
@@ -1937,6 +1998,56 @@ wss.on('connection', (socket) => {
         clearTimeout(slot.timer)
         slot.resolve(msg)
       }
+    }
+
+    // ---- agenda, e-mails, configurações (⚙) e o digest da manhã
+    if (msg.type === 'integ') {
+      send({ type: 'integ', ...estadoIntegracoes() })
+      return
+    }
+    if (msg.type === 'integ-config') {
+      send({ type: 'integ-config', config: configPublica() })
+      return
+    }
+    if (msg.type === 'integ-salvar' && msg.config && typeof msg.config === 'object') {
+      try {
+        salvarConfig(msg.config)
+        console.log('[jarvis] configurações de agenda/e-mail salvas')
+        send({ type: 'integ-config', config: configPublica(), salvo: true })
+        void atualizarAgenda().catch(() => {})
+        void atualizarEmails().catch(() => {})
+      } catch (err) {
+        send({ type: 'integ-config', config: configPublica(), erro: String(err?.message ?? err) })
+      }
+      return
+    }
+    if (msg.type === 'integ-atualizar') {
+      if (msg.qual !== 'emails') void atualizarAgenda().catch(() => {})
+      if (msg.qual !== 'agenda') void atualizarEmails().catch(() => {})
+      return
+    }
+    if (msg.type === 'digest-auto') {
+      // Uma vez por dia, de manhã (5h–13h), na primeira vez que o JARVIS liga.
+      const f = join(PROJECT_ROOT, 'digest-ultimo.txt')
+      const hoje = new Date().toLocaleDateString('pt-BR')
+      let ultimo = ''
+      try {
+        ultimo = readFileSync(f, 'utf8').trim()
+      } catch {}
+      const h = new Date().getHours()
+      if (lerConfig().digestAuto !== false && ultimo !== hoje && h >= 5 && h < 13) {
+        try {
+          writeFileSync(f, hoje)
+        } catch {}
+        void prontoIntegracoes().then(() => send({ type: 'digest-auto' }))
+      }
+      return
+    }
+    if (msg.type === 'digest-marcar') {
+      try {
+        writeFileSync(join(PROJECT_ROOT, 'digest-ultimo.txt'), new Date().toLocaleDateString('pt-BR'))
+      } catch {}
+      return
     }
 
     if (msg.type === 'cerebro') {

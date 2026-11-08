@@ -6,6 +6,8 @@ import { BRIDGE_HTTP_URL } from '../config'
 import { requestPainel, sendCerebro } from '../lib/brain'
 import { useCerebro } from '../cerebro'
 import { SecondBrain } from './SecondBrain'
+import { Modulos } from './Modulos'
+import { useInteg, abrirPainel } from '../integ'
 import { Blades } from './Blades'
 import { Effects } from './Effects'
 import { Pointer } from './Pointer'
@@ -162,7 +164,11 @@ export function VideoHud() {
   const line = caption || (phase === 'speaking' && last?.role === 'jarvis' ? last.text.split(/(?<=[.!?])\s/).slice(-1)[0] : '')
 
   const cerebroAberto = useCerebro((s) => s.aberto)
-  useEffect(() => setOrbLayout(cerebroAberto ? 'cerebro' : hasOpen), [hasOpen, cerebroAberto])
+  const painel = useInteg((s) => s.painel)
+  const acao = useInteg((s) => s.acao)
+  const proxEv = useInteg((s) => s.eventos.find((e) => !e.diaTodo && e.inicio > Date.now()))
+  const sobreposto = cerebroAberto || painel !== null
+  useEffect(() => setOrbLayout(sobreposto ? 'cerebro' : hasOpen), [hasOpen, sobreposto])
 
   // Tela de inicialização: o nome, "sincronizando dados...", por ~2,2 s.
   const [bootando, setBootando] = useState(true)
@@ -191,12 +197,15 @@ export function VideoHud() {
     setPainelPedido(true)
     requestPainel()
     sendCerebro({ type: 'cerebro' })
+    sendCerebro({ type: 'integ' })
+    // O bom dia automático: o cérebro decide se é a primeira vez hoje, de manhã.
+    setTimeout(() => sendCerebro({ type: 'digest-auto' }), 1500)
     const id = setInterval(requestPainel, 30 * 60 * 1000)
     return () => clearInterval(id)
   }, [phase, painelPedido])
 
   return (
-    <div className={`vh ${hasOpen ? 'vh-open' : 'vh-closed'} ${cerebroAberto ? 'vh-cerebro' : ''}`}>
+    <div className={`vh ${hasOpen ? 'vh-open' : 'vh-closed'} ${sobreposto ? 'vh-cerebro' : ''}`}>
       <div className="vh-grid" />
       <WireOrb />
 
@@ -205,6 +214,9 @@ export function VideoHud() {
           <span>◉ PERSONALIZADO · SINCRONIZADO</span>
           <span className="vh-pill-btn" onClick={() => (hasOpen ? useCards.getState().minimizeAll() : useCards.getState().restoreAll())}>
             ▣ {hasOpen ? 'MINIMIZAR TUDO' : 'MOSTRAR PAINEL'}
+          </span>
+          <span className="vh-pill-btn" title="Morning digest: o seu bom dia" onClick={() => useInteg.getState().digest?.()}>
+            ☀ DIGEST
           </span>
         </div>
         <div className={`vh-phase vh-phase-${phase}`}>{STATUS[phase]}</div>
@@ -238,10 +250,35 @@ export function VideoHud() {
         <button
           className={`vh-rail-btn ${cerebroAberto ? 'on' : ''}`}
           title="Segundo cérebro"
-          onClick={() => useCerebro.getState().abrir()}
+          onClick={() => (cerebroAberto ? useCerebro.getState().abrir(false) : abrirPainel('cerebro'))}
         >
           <span>🧠</span>
           <i>Cérebro</i>
+        </button>
+        <button
+          className={`vh-rail-btn ${painel === 'agenda' ? 'on' : ''}`}
+          title={proxEv ? `Próximo: ${proxEv.titulo} às ${new Date(proxEv.inicio).toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' })}` : 'Agenda'}
+          onClick={() => (painel === 'agenda' ? abrirPainel(null) : abrirPainel('agenda'))}
+        >
+          <span>📅</span>
+          <i>Agenda</i>
+        </button>
+        <button
+          className={`vh-rail-btn ${painel === 'emails' ? 'on' : ''}`}
+          title={`E-mails${acao ? ` · ${acao} pedindo ação` : ''}`}
+          onClick={() => (painel === 'emails' ? abrirPainel(null) : abrirPainel('emails'))}
+        >
+          <span>✉</span>
+          <i>E-mails</i>
+          {acao > 0 && <b className="vh-badge-acao">{acao}</b>}
+        </button>
+        <button
+          className={`vh-rail-btn ${painel === 'config' ? 'on' : ''}`}
+          title="Configurações"
+          onClick={() => (painel === 'config' ? abrirPainel(null) : abrirPainel('config'))}
+        >
+          <span>⚙</span>
+          <i>Config.</i>
         </button>
         {slots.length > 0 && (
           <button
@@ -277,6 +314,7 @@ export function VideoHud() {
       </div>
 
       {cerebroAberto && <SecondBrain />}
+      <Modulos />
 
       {line && <div className="vh-caption">{line}</div>}
       {error && <div className="vh-error">{error}</div>}
