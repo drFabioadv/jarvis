@@ -70,6 +70,28 @@ public static class JarvisWin {
 
   public static int Pid(IntPtr h) { uint p; GetWindowThreadProcessId(h, out p); return (int)p; }
 
+  [DllImport("user32.dll")] static extern bool GetWindowRect(IntPtr h, out RECT r);
+  [DllImport("user32.dll")] static extern IntPtr MonitorFromWindow(IntPtr h, uint flags);
+  [StructLayout(LayoutKind.Sequential)] public struct MONITORINFO { public int cbSize; public RECT rcMonitor; public RECT rcWork; public uint dwFlags; }
+  [DllImport("user32.dll")] static extern bool GetMonitorInfo(IntPtr m, ref MONITORINFO mi);
+
+  /// Tem um jogo ou outro programa em tela cheia na frente? (que nao seja o
+  /// proprio JARVIS nem a area de trabalho)
+  public static bool FullscreenForeground(IntPtr jarvis) {
+    IntPtr f = GetForegroundWindow();
+    if (f == IntPtr.Zero || f == jarvis) return false;
+    var c = new StringBuilder(64);
+    GetClassName(f, c, 64);
+    string cls = c.ToString();
+    if (cls == "Progman" || cls == "WorkerW" || cls == "Shell_TrayWnd") return false;
+    RECT r;
+    if (!GetWindowRect(f, out r)) return false;
+    var mi = new MONITORINFO(); mi.cbSize = Marshal.SizeOf(mi);
+    if (!GetMonitorInfo(MonitorFromWindow(f, 2), ref mi)) return false;
+    return r.Left <= mi.rcMonitor.Left && r.Top <= mi.rcMonitor.Top
+        && r.Right >= mi.rcMonitor.Right && r.Bottom >= mi.rcMonitor.Bottom;
+  }
+
   [StructLayout(LayoutKind.Sequential)] public struct POINT { public int X, Y; }
   [StructLayout(LayoutKind.Sequential)] public struct RECT { public int Left, Top, Right, Bottom; }
   [StructLayout(LayoutKind.Sequential)] public struct PLACEMENT {
@@ -351,7 +373,7 @@ $miMostrar  = $menu.Items.Add('Mostrar JARVIS')
 $miMostrar.Font = New-Object System.Drawing.Font($miMostrar.Font, [System.Drawing.FontStyle]::Bold)
 $miEsconder = $menu.Items.Add('Esconder (continua ouvindo)')
 $menu.Items.Add('-') | Out-Null
-$miAoOuvir  = New-Object System.Windows.Forms.ToolStripMenuItem('Mostrar a janela quando ouvir "Ei Jarvis"')
+$miAoOuvir  = New-Object System.Windows.Forms.ToolStripMenuItem('Mostrar a janela quando ouvir "Ei Jarvis" (menos em jogos/tela cheia)')
 $miAoOuvir.CheckOnClick = $true
 $miAoOuvir.Checked = $cfg.mostrarAoOuvir
 $menu.Items.Add($miAoOuvir) | Out-Null
@@ -500,7 +522,11 @@ $timer.add_Tick({
     if ($txt) {
       $st = $txt | ConvertFrom-Json
       if ($script:wakes -ge 0 -and $st.wakes -gt $script:wakes) {
-        if ($cfg.mostrarAoOuvir) { if ([JarvisWin]::Hidden) { Mostrar $false } }
+        # Num jogo ou outro programa em tela cheia: responde so pela voz, sem
+        # abrir a janela e sem aviso na tela.
+        $telaCheia = [JarvisWin]::FullscreenForeground($script:hwnd)
+        if ($telaCheia) { Log 'ouviu em tela cheia: respondendo so pela voz' }
+        elseif ($cfg.mostrarAoOuvir) { if ([JarvisWin]::Hidden) { Mostrar $false } }
         elseif ([JarvisWin]::Hidden) { $tray.ShowBalloonTip(1500, 'J.A.R.V.I.S.', 'Ouvindo...', 'Info') }
       }
       $script:wakes = [int]$st.wakes
