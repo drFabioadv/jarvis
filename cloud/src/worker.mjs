@@ -24,9 +24,7 @@ export async function iniciarWorker(opts = {}) {
 
   let conT, conA
   // ---- pedidos para os agentes
-  const wTarefas = new Worker(
-    FILA_TAREFAS,
-    async (job) => {
+  const procTarefa = async (job) => {
       const t = (await q('SELECT * FROM trabalhos WHERE id = $1', [job.data.trabalhoId])).rows[0]
       if (!t || t.cancelar || t.estado === 'cancelado') return { ignorado: true }
       if (t.profundidade > LIMITES.maxProfundidade) throw new Error('profundidade máxima')
@@ -51,14 +49,10 @@ export async function iniciarWorker(opts = {}) {
       } finally {
         clearInterval(vigia)
       }
-    },
-    { connection: (conT = conexaoRedis(s.cfg.REDIS_URL)), concurrency: 2, lockDuration: 60000, stalledInterval: 30000, maxStalledCount: 2 },
-  )
+  }
 
   // ---- lembretes, rotinas e manutenção
-  const wAgenda = new Worker(
-    FILA_AGENDA,
-    async (job) => {
+  const procAgenda = async (job) => {
       if (job.name === 'lembrete') {
         const l = (await q(`UPDATE lembretes SET enviado = true WHERE id = $1 AND NOT enviado RETURNING *`, [job.data.lembreteId])).rows[0]
         if (!l) return { ignorado: true }
@@ -101,16 +95,24 @@ export async function iniciarWorker(opts = {}) {
         return { expiradas, consolidadas }
       }
       throw new Error(`trabalho desconhecido: ${job.name}`)
-    },
-    { connection: (conA = conexaoRedis(s.cfg.REDIS_URL)), concurrency: 4, lockDuration: 60000 },
-  )
+  }
 
-  for (const w of [wTarefas, wAgenda]) w.on('failed', (job, err) => console.warn(`[worker] ${job?.name} falhou (tentativa ${job?.attemptsMade}): ${err.message}`))
+  let wTarefas = null
+  let wAgenda = null
+  if (filas.local) {
+    // Modo PC: a fila e o agendador rodam aqui mesmo, guardados no banco.
+    filas.processar({ tarefa: procTarefa, agenda: procAgenda })
+  } else {
+    wTarefas = new Worker(FILA_TAREFAS, procTarefa, { connection: (conT = conexaoRedis(s.cfg.REDIS_URL)), concurrency: 2, lockDuration: 60000, stalledInterval: 30000, maxStalledCount: 2 })
+    wAgenda = new Worker(FILA_AGENDA, procAgenda, { connection: (conA = conexaoRedis(s.cfg.REDIS_URL)), concurrency: 4, lockDuration: 60000 })
+    for (const w of [wTarefas, wAgenda]) w.on('failed', (job, err) => console.warn(`[worker] ${job?.name} falhou (tentativa ${job?.attemptsMade}): ${err.message}`))
+  }
   const sinc = await filas.sincronizar()
   console.log(`[worker] pronto — ${sinc.rotinas} rotina(s) e ${sinc.lembretes} lembrete(s) restaurados`)
 
   async function parar() {
-    await Promise.allSettled([wTarefas.close(), wAgenda.close()])
+    await Promise.allSettled([wTarefas?.close(), wAgenda?.close()])
+    filas.pararProcessamento?.()
     conT?.disconnect()
     conA?.disconnect()
     if (proprios) {

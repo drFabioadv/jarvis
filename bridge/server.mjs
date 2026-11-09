@@ -18,6 +18,7 @@
 import { WebSocketServer } from 'ws'
 import { handleLocal, loadConfig, painelInicial, geocode } from './local.mjs'
 import { ollamaChat, ollamaReady, needsClaude } from './ollama.mjs'
+import { cerebroPcAtivo, perguntarPc } from './cerebro-pc.mjs'
 import { iniciarIndice } from './indice.mjs'
 import { iniciarIntegracoes, estadoIntegracoes, configPublica, salvarConfig, lerConfig, atualizarAgenda, atualizarEmails, contextoCompacto, prontoIntegracoes } from './integracoes.mjs'
 import * as org from './organizador.mjs'
@@ -1104,6 +1105,7 @@ async function handleAtalho(req, res) {
   try {
     const steps = await handleLocal(text, ctxLocal(cfg, atalhoState))
     if (steps?.length) return reply(steps.map((st) => st.say).filter(Boolean).join(' '))
+    if (cerebroPcAtivo(cfg)) return reply(await perguntarPc(text))
     const ia = cfg.iaLocal ?? {}
     const model = ia.modelo || 'qwen2.5:3b'
     if (ia.ativa !== false && !needsClaude(text) && (await ollamaReady(model))) {
@@ -2041,6 +2043,27 @@ wss.on('connection', (socket) => {
     } catch (err) {
       console.warn(`[jarvis] cérebro local falhou, passando ao Claude: ${err?.message ?? err}`)
       return false
+    }
+    if ((!steps || !steps.length) && cerebroPcAtivo(cfg)) {
+      // Cérebro do PC (modelo aberto no Ollama): tudo que não é comando local
+      // vai para ele — o Claude nem é chamado.
+      try {
+        const reply = await perguntarPc(text, {
+          aoTexto: (delta) => {
+            if (my === localSeq) send({ type: 'text', delta, ask: id })
+          },
+        })
+        console.log(`[jarvis] respondido pelo cérebro do PC: ${text}`)
+        if (my === localSeq) send({ type: 'done', text: reply, ask: id })
+      } catch (err) {
+        const msg = `Meu cérebro no PC não respondeu, senhor: ${String(err?.message ?? err).slice(0, 140)}. Confira se o Ollama está aberto.`
+        console.warn(`[jarvis] cérebro do PC falhou: ${err?.message ?? err}`)
+        if (my === localSeq) {
+          send({ type: 'text', delta: msg, ask: id })
+          send({ type: 'done', text: msg, ask: id })
+        }
+      }
+      return true
     }
     if (!steps || !steps.length) {
       // Segundo degrau: a IA local (Ollama), se instalada, para conversa e

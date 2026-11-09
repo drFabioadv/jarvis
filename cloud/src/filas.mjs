@@ -15,15 +15,20 @@ import { Queue } from 'bullmq'
 import IORedis from 'ioredis'
 import { randomUUID } from 'node:crypto'
 import { q } from './db.mjs'
+import { RedisMemoria } from './local/redis-memoria.mjs'
+import { criarFilasLocais } from './local/fila-local.mjs'
 
 export const FILA_TAREFAS = 'jarvis-tarefas'
 export const FILA_AGENDA = 'jarvis-agenda'
 
+/** REDIS_URL = "memoria" → modo PC (sem Redis): tudo no próprio processo. */
 export function conexaoRedis(url) {
+  if (url === 'memoria') return new RedisMemoria()
   return new IORedis(url, { maxRetriesPerRequest: null, enableReadyCheck: true })
 }
 
-export function criarFilas(redisUrl) {
+export function criarFilas(redisUrl, opts = {}) {
+  if (redisUrl === 'memoria') return criarFilasLocais(opts)
   const conexao = conexaoRedis(redisUrl)
   const tarefas = new Queue(FILA_TAREFAS, { connection: conexao, defaultJobOptions: { attempts: 3, backoff: { type: 'exponential', delay: 5000 }, removeOnComplete: { count: 500 }, removeOnFail: { count: 500 } } })
   const agenda = new Queue(FILA_AGENDA, { connection: conexao, defaultJobOptions: { attempts: 3, backoff: { type: 'exponential', delay: 10000 }, removeOnComplete: { count: 1000 }, removeOnFail: { count: 500 } } })

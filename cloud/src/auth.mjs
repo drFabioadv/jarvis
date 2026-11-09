@@ -44,6 +44,8 @@ export function registrarAuth(app, { cfg }) {
   const segura = cfg.https
   const opcoesCookie = (maxAgeS) => ({ path: '/', httpOnly: true, secure: segura, sameSite: 'strict', maxAge: maxAgeS })
   const origem = new URL(cfg.PUBLIC_URL).origin
+  // Modo PC: o mesmo JARVIS é aberto no próprio PC (localhost) e no celular (Tailscale).
+  const origens = [origem, ...String(process.env.JARVIS_ORIGENS_EXTRAS ?? '').split(',').map((x) => x.trim()).filter(Boolean)]
 
   async function criarSessao(reply, req, ownerId, mfa) {
     const token = tokenAleatorio(32)
@@ -95,7 +97,7 @@ export function registrarAuth(app, { cfg }) {
     if (req.url.startsWith('/api/dispositivos/parear')) return
     if (req.headers['x-jarvis'] !== '1') return reply.code(403).send({ erro: 'requisição sem o cabeçalho de proteção' })
     const o = req.headers.origin
-    if (o && o !== origem) return reply.code(403).send({ erro: 'origem não permitida' })
+    if (o && !origens.includes(o)) return reply.code(403).send({ erro: 'origem não permitida' })
   })
 
   // ---------------------------------------------------------------- estado
@@ -233,7 +235,7 @@ export function registrarAuth(app, { cfg }) {
     if (!d) return reply.code(400).send({ erro: 'desafio expirado' })
     let v
     try {
-      v = await verifyRegistrationResponse({ response: req.body.resposta, expectedChallenge: d.desafio, expectedOrigin: origem, expectedRPID: cfg.rpId, requireUserVerification: true })
+      v = await verifyRegistrationResponse({ response: req.body.resposta, expectedChallenge: d.desafio, expectedOrigin: origens, expectedRPID: cfg.rpId, requireUserVerification: true })
     } catch (err) {
       return reply.code(400).send({ erro: `passkey recusada: ${err.message}` })
     }
@@ -260,7 +262,7 @@ export function registrarAuth(app, { cfg }) {
     }
     let v
     try {
-      v = await verifyAuthenticationResponse({ response: req.body.resposta, expectedChallenge: d.desafio, expectedOrigin: origem, expectedRPID: cfg.rpId, requireUserVerification: true, credential: { id: pk.id, publicKey: new Uint8Array(pk.chave_publica), counter: Number(pk.contador), transports: pk.transportes } })
+      v = await verifyAuthenticationResponse({ response: req.body.resposta, expectedChallenge: d.desafio, expectedOrigin: origens, expectedRPID: cfg.rpId, requireUserVerification: true, credential: { id: pk.id, publicKey: new Uint8Array(pk.chave_publica), counter: Number(pk.contador), transports: pk.transportes } })
     } catch (err) {
       await falhou([[`ip:${req.ip}`]])
       return reply.code(401).send({ erro: `passkey recusada: ${err.message}` })

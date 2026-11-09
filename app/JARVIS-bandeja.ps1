@@ -339,6 +339,15 @@ function Iniciar-Checagem {
   $script:upProc = [System.Diagnostics.Process]::Start($psi)
 }
 
+# Cerebro do PC (cloud\src\pc.mjs): reinicia junto, se estiver instalado.
+function Reiniciar-CerebroPc {
+  $vbs = Join-Path $AppDir 'cerebro-pc.vbs'
+  if (-not (Test-Path (Join-Path $Root 'cloud\node_modules'))) { return }
+  Get-CimInstance Win32_Process -ErrorAction SilentlyContinue | Where-Object { $_.CommandLine -like '*cloud\src\pc.mjs*' } | ForEach-Object { Stop-Process -Id $_.ProcessId -Force -ErrorAction SilentlyContinue }
+  Start-Process -FilePath (Join-Path $env:WINDIR 'System32\wscript.exe') -ArgumentList ('"' + $vbs + '"')
+  Log 'cerebro do PC reiniciado'
+}
+
 function Aplicar-Atualizacao([string]$msg) {
   Log "aplicando atualizacao: $msg"
   $tray.ShowBalloonTip(4000, 'J.A.R.V.I.S.', "Atualizando o JARVIS: $msg", 'Info')
@@ -347,6 +356,7 @@ function Aplicar-Atualizacao([string]$msg) {
   $node = (Get-Command node -ErrorAction SilentlyContinue).Source
   $up = Start-Process -FilePath $node -ArgumentList @(('"' + (Join-Path $Root 'scripts\update.mjs') + '"'), '--apply') -WorkingDirectory $Root -WindowStyle Hidden -Wait -PassThru
   Log "atualizacao terminou (codigo $($up.ExitCode)); reiniciando"
+  Reiniciar-CerebroPc
   $tray.Visible = $false
   try { $mutex.ReleaseMutex() } catch {}
   $arg = '"' + (Join-Path $AppDir 'JARVIS.vbs') + '"' + $(if ($estavaOculto) { ' -Oculto' } else { '' })
@@ -436,6 +446,7 @@ $miAcao.add_Click({
 })
 $miReiniciar.add_Click({
   Parar-Tudo
+  Reiniciar-CerebroPc
   Start-Sleep -Milliseconds 800
   $script:saindo = $false
   $script:wakes = -1

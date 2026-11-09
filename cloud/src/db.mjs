@@ -10,11 +10,57 @@ import { fileURLToPath } from 'node:url'
 const PASTA = fileURLToPath(new URL('../migrations', import.meta.url))
 let pool = null
 
+/**
+ * DATABASE_URL = "postgres://..."  → PostgreSQL de verdade (servidor/Docker).
+ * DATABASE_URL = "pglite:C:/pasta" → PostgreSQL embutido (PGlite), um arquivo
+ * no próprio PC: o "modo PC", sem instalar banco nenhum. Mesmo SQL, mesmo
+ * pgvector, mesmas migrações.
+ */
 export function abrirBanco(url) {
   if (pool) return pool
+  if (String(url).startsWith('pglite:')) {
+    pool = poolPglite(String(url).slice('pglite:'.length))
+    return pool
+  }
   pool = new pg.Pool({ connectionString: url, max: 10, idleTimeoutMillis: 30000 })
   pool.on('error', (err) => console.error('[db] conexão ociosa falhou:', err.message))
   return pool
+}
+
+/** PGlite com a mesma cara do pg.Pool (query, connect, end). */
+function poolPglite(pasta) {
+  const pronto = (async () => {
+    const { PGlite } = await import('@electric-sql/pglite')
+    const { vector } = await import('@electric-sql/pglite-pgvector')
+    const { pg_trgm } = await import('@electric-sql/pglite/contrib/pg_trgm')
+    const { pgcrypto } = await import('@electric-sql/pglite/contrib/pgcrypto')
+    return PGlite.create(pasta, { extensions: { vector, pg_trgm, pgcrypto } })
+  })()
+  const norm = (r) => ({ rows: r.rows ?? [], rowCount: r.affectedRows ?? r.rows?.length ?? 0 })
+  const consulta = async (db, texto, valores) => {
+    // Vários comandos sem parâmetros (arquivos de migração): exec.
+    if (!valores?.length && /;\s*\S/.test(texto.trim().replace(/;\s*$/, ''))) {
+      const rs = await db.exec(texto)
+      return norm(rs[rs.length - 1] ?? {})
+    }
+    return norm(await db.query(texto, valores))
+  }
+  return {
+    pglite: true,
+    async query(texto, valores) {
+      return consulta(await pronto, texto, valores)
+    },
+    /** Transação exclusiva: o PGlite segura as outras consultas até terminar. */
+    async transacao(fn) {
+      const db = await pronto
+      return db.transaction((tx) => fn({ query: (t, v) => consulta(tx, t, v) }))
+    },
+    async end() {
+      const db = await pronto
+      await db.close()
+    },
+    on() {},
+  }
 }
 
 export function banco() {
@@ -30,6 +76,7 @@ export async function fecharBanco() {
 export const q = (texto, valores) => banco().query(texto, valores)
 
 export async function transacao(fn) {
+  if (banco().pglite) return banco().transacao(fn)
   const c = await banco().connect()
   try {
     await c.query('BEGIN')

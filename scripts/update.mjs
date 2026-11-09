@@ -39,7 +39,7 @@ const REPO = (() => {
 })() || 'drFabioadv/jarvis'
 const BRANCH = 'main'
 const VERSION_FILE = join(ROOT, 'versao.txt')
-const KEEP = new Set(['node_modules', 'logs', 'dist', '.git', 'jarvis-config.json', 'elevenlabs.txt', 'elevenlabs-voz.txt', 'versao.txt', 'atualizacao.txt', 'atalho-token.txt', 'indice-computador.json', 'lembretes.json', 'segundo-cerebro.json', 'integracoes.json', 'triagem-emails.json', 'digest-ultimo.txt', 'tarefas.json', 'rotinas.json', 'historico.json'])
+const KEEP = new Set(['node_modules', 'logs', 'dist', '.git', 'jarvis-config.json', 'elevenlabs.txt', 'elevenlabs-voz.txt', 'versao.txt', 'atualizacao.txt', 'atalho-token.txt', 'indice-computador.json', 'lembretes.json', 'segundo-cerebro.json', 'integracoes.json', 'triagem-emails.json', 'digest-ultimo.txt', 'tarefas.json', 'rotinas.json', 'historico.json', 'dist-cloud'])
 
 mkdirSync(join(ROOT, 'logs'), { recursive: true })
 const log = (m) => {
@@ -126,6 +126,14 @@ async function apply() {
     if (npm.status !== 0) log(`npm install falhou: ${npm.stderr?.slice(-400)}`)
   }
   // Força a recompilação da interface na próxima partida.
+  // Cérebro do PC (cloud/): se instalado, atualiza os pacotes dele e a interface.
+  if (existsSync(join(ROOT, 'cloud', 'node_modules'))) {
+    log('atualizando o cérebro do PC')
+    const n2 = spawnSync(process.platform === 'win32' ? 'npm.cmd' : 'npm', ['install', '--no-audit', '--no-fund'], { cwd: join(ROOT, 'cloud'), encoding: 'utf8', shell: process.platform === 'win32' })
+    if (n2.status !== 0) log(`npm install (cloud) falhou: ${n2.stderr?.slice(-400)}`)
+    const vb = spawnSync(process.platform === 'win32' ? 'npx.cmd' : 'npx', ['vite', 'build', '--mode', 'cloud'], { cwd: ROOT, encoding: 'utf8', shell: process.platform === 'win32' })
+    if (vb.status !== 0) log(`build da interface do PC falhou: ${vb.stderr?.slice(-400)}`)
+  }
   rmSync(join(ROOT, 'dist'), { recursive: true, force: true })
   writeFileSync(VERSION_FILE, r.sha)
   rmSync(tmp, { recursive: true, force: true })

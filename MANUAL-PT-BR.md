@@ -13,6 +13,13 @@ próprio PC é resolvido aqui, de graça e sem gastar o seu limite.
 
 Atualizações: ícone do JARVIS → **Procurar atualização agora**. Seus dados nunca são sobrescritos.
 
+## Cérebro no seu PC (sem Claude, sem custo)
+
+Com uma placa de vídeo boa (a sua tem 16 GB), rode **INSTALAR-JARVIS-PC.bat**: o JARVIS passa a
+pensar com um modelo aberto (Qwen 2.5 14B) no próprio computador, ganha memória com busca por
+significado, agentes, tarefas e rotinas, e pode ser usado no celular pelo Tailscale
+(**CONFIGURAR-CELULAR.bat**). Detalhes em `cloud/docs/MODO-PC.md`.
+
 ## O que ele faz
 
 | Área | Exemplos de voz | Gasta o Claude? |

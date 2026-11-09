@@ -28,7 +28,7 @@ export function montarServicos({ cfg = carregarConfig(), fetch: f } = {}) {
   })
   const memoria = criarMemoria({ gateway })
   const ferramentas = criarFerramentas()
-  const filas = criarFilas(cfg.REDIS_URL)
+  const filas = criarFilas(cfg.REDIS_URL, { tz: cfg.JARVIS_TZ })
   const push = criarPush(cfg)
   const dispositivos = criarDispositivos({ redisUrl: cfg.REDIS_URL })
   const google = criarGoogle({ cfg })

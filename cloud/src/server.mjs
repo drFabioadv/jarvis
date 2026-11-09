@@ -15,6 +15,7 @@ import { auditar } from './seguranca/auditoria.mjs'
 import { importarPacote } from './migracao.mjs'
 import { AGENTES } from './agentes/agentes.mjs'
 import { carregarStt, estadoStt, transcrever } from './voz/stt.mjs'
+import { iguais } from './seguranca/cripto.mjs'
 
 const VERSAO = '3.0.0'
 
@@ -118,6 +119,42 @@ export async function criarApp(opts = {}) {
     }
     return reply
   })
+
+  // ---------------------------------------------------------------- canal interno (modo PC)
+  // O JARVIS do PC (bandeja, voz, comandos locais) manda para cá o que não
+  // resolve sozinho. Só aceita do próprio computador e com o token interno.
+  const tokenInterno = process.env.JARVIS_TOKEN_INTERNO
+  if (tokenInterno) {
+    let conversaInterna = null
+    app.post('/api/interno/conversa', async (req, reply) => {
+      const local = ['127.0.0.1', '::1', '::ffff:127.0.0.1'].includes(req.socket.remoteAddress)
+      if (!local || !iguais(String(req.headers['x-jarvis-interno'] ?? ''), tokenInterno)) return reply.code(403).send({ erro: 'proibido' })
+      const dono = (await q('SELECT id FROM owners LIMIT 1')).rows[0]
+      if (!dono) return reply.code(409).send({ erro: 'crie a sua conta primeiro (abra o JARVIS no navegador)' })
+      const d = corpo(z.object({ texto: z.string().min(1).max(8000), nova: z.boolean().optional() }), req, reply)
+      if (!d) return
+      if (d.nova) conversaInterna = null
+      reply.raw.writeHead(200, { 'content-type': 'text/event-stream; charset=utf-8', 'cache-control': 'no-store' })
+      const ctrl = new AbortController()
+      req.raw.on('close', () => {
+        if (!reply.raw.writableEnded) ctrl.abort(new Error('cancelado'))
+      })
+      const enviar = (e) => {
+        if (e.tipo === 'inicio') conversaInterna = e.conversaId
+        reply.raw.write(`data: ${JSON.stringify(e)}\n\n`)
+      }
+      try {
+        // Conversa contínua: a mesma por até 30 min sem uso.
+        const c = conversaInterna && (await q(`SELECT 1 FROM conversas WHERE id = $1 AND atualizada > now() - interval '30 minutes'`, [conversaInterna])).rowCount ? conversaInterna : undefined
+        await orquestrador.executar({ ownerId: dono.id, conversaId: c, texto: d.texto, canal: 'voz', aoEvento: enviar, signal: ctrl.signal })
+      } catch (err) {
+        enviar({ tipo: 'erro', mensagem: String(err?.message ?? err).slice(0, 300) })
+      } finally {
+        reply.raw.end()
+      }
+      return reply
+    })
+  }
 
   app.get('/api/conversas', auth, async (req) => (await q(`SELECT id, titulo, resumo, criada, atualizada FROM conversas WHERE owner_id = $1 ORDER BY atualizada DESC LIMIT 100`, [req.ownerId])).rows)
   app.get('/api/conversas/:id', auth, async (req, reply) => {
